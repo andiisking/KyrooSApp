@@ -29,5 +29,10 @@
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
+        <receiver 
+            android:name="frb.axeron.adb.AdbPairingReceiver" 
+            android:enabled="true" 
+            android:exported="false" />
+
     </application>
 </manifest>
