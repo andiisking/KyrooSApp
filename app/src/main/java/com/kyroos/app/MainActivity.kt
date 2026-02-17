@@ -10,13 +10,13 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import frb.axeron.adb.AdbClient
 import frb.axeron.adb.AdbKey
 import frb.axeron.adb.AdbPairingService
+import com.kyroos.app.R
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -25,20 +25,18 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Konfigurasi WebView
         webView = findViewById(R.id.webView)
         val webSettings: WebSettings = webView.settings
         webSettings.javaScriptEnabled = true
         webSettings.domStorageEnabled = true
+        webSettings.allowFileAccess = true
         webView.webViewClient = WebViewClient()
 
-        // Menghubungkan script.js dengan Kotlin
+        // Registrasi jembatan KyroosApp ke JavaScript
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
         
-        // Memuat Web UI dari folder assets
         webView.loadUrl("file:///android_asset/index.html")
 
-        // Meminta izin notifikasi & jalankan Service Pairing
         checkPermissions()
     }
 
@@ -66,20 +64,20 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-// Jembatan untuk mengeksekusi perintah dari Web UI (script.js)
 class KyroosAdbInterface(private val context: Context) {
     @JavascriptInterface
     fun executeShell(command: String): String {
         return try {
             val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
             val port = prefs.getInt("paired_port", -1)
-            if (port == -1) return "Error: Belum ada pairing ADB!"
+            
+            if (port == -1) return "Error: ADB belum dipairing!"
 
             val adbKey = AdbKey(prefs)
-            val client = AdbClient(adbKey, port)
-            client.connect()
-            // Di sini kamu memanggil fungsi execute dari AdbClient.kt
-            "Success execute: $command" 
+            val client = AdbClient(adbKey, "127.0.0.1", port)
+            
+            // Eksekusi dan ambil outputnya
+            client.execute(command)
         } catch (e: Exception) {
             "Error: ${e.message}"
         }

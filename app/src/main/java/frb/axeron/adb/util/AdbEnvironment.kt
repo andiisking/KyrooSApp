@@ -1,19 +1,15 @@
 package frb.axeron.adb.util
 
 import android.os.Build
-import android.os.SystemProperties
-import androidx.annotation.ChecksSdkIntAtLeast
 
 object AdbEnvironment {
-    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.R)
-    fun isTlsSupported(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-    }
-
     fun getAdbTcpPort(): Int {
-        // Mengambil port dari properti sistem Android murni
-        var port = SystemProperties.getInt("service.adb.tcp.port", -1)
-        if (port <= 0) port = SystemProperties.getInt("persist.adb.tcp.port", -1)
-        return port
+        return try {
+            val c = Class.forName("android.os.SystemProperties")
+            val getInt = c.getMethod("getInt", String::class.java, Int::class.java)
+            var port = getInt.invoke(null, "service.adb.tcp.port", -1) as Int
+            if (port <= 0) port = getInt.invoke(null, "persist.adb.tcp.port", -1) as Int
+            port
+        } catch (e: Exception) { -1 }
     }
 }
