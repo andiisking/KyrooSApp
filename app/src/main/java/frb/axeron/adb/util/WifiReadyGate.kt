@@ -44,6 +44,14 @@ class WifiReadyGate(
             return
         }
 
+//        val network = cm.activeNetwork
+//        if (network == null || !isUsable(network)) {
+//            Log.d(TAG, "Fast: No Wi-Fi network available")
+//            cleanup()
+//            onFail()
+//            return
+//        }
+
         cm.registerDefaultNetworkCallback(callback)
 
         handler.postDelayed({
@@ -61,6 +69,7 @@ class WifiReadyGate(
 
         Log.d(TAG, "fire() network=$network")
 
+        // Bind process if possible (critical for OEMs)
         if (network != null) {
             try {
                 cm.bindProcessToNetwork(network)

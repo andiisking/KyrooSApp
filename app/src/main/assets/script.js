@@ -1,23 +1,33 @@
         const CONFIG_PATH = "/storage/emulated/0/kikiros";
         
-        // Gantikan fungsi window.ksu dengan jembatan Native AndroidBridge ini
-window.ksu = {
-    exec: async (cmd) => {
-        if (window.AndroidBridge) {
-            let result = window.AndroidBridge.execShell(cmd);
-            return { stdout: result };
-        }
-        return { stdout: "ADB tidak terhubung" };
-    }
-};
+        // Biarkan baris ini tetap ada sebagai cadangan (fallback)
+window.ksu = window.ksu || { exec: async () => ({ stdout: "" }) };
 
-// Fungsi execShell bawaan kamu tetap sama, otomatis mengarah ke ADB sekarang
 async function execShell(cmd) {
     try {
-        const res = await window.ksu.exec(cmd);
-        return res.stdout || res; 
-    } catch (e) { console.error(e); return ""; }
+        // 1. Prioritas Utama: Gunakan ADB KyrooS (Jembatan Kotlin)
+        if (typeof KyroosApp !== 'undefined') {
+            console.log("KyrooS ADB Executing: " + cmd);
+            // Memanggil fungsi di MainActivity.kt
+            const result = KyroosApp.executeShell(cmd); 
+            return result; 
+        }
+
+        // 2. Prioritas Kedua: Gunakan KernelSU (Jika dibuka di manager KSU)
+        if (window.ksu && window.ksu.exec) {
+            console.log("KSU Executing: " + cmd);
+            const res = await window.ksu.exec(cmd);
+            return res.stdout || res; 
+        }
+
+        console.warn("No execution bridge found!");
+        return "Error: No access (Root/ADB) found.";
+    } catch (e) {
+        console.error("Exec Error: ", e);
+        return "Error: " + e.message;
+    }
 }
+
 
         let allPackages = [];
         let infoCache = {};

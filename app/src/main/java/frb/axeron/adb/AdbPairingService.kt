@@ -10,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
-import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.Observer
 import kotlinx.coroutines.CoroutineScope
@@ -22,150 +21,149 @@ class AdbPairingService : Service() {
 
     companion object {
         const val NOTIFICATION_CHANNEL = "adb_pairing"
-        private const val TAG = "AdbPairingService"
-        private const val NOTIFICATION_ID = 1
-        private const val REPLY_REQUEST_CODE = 1
-        private const val STOP_REQUEST_CODE = 2
-        private const val START_ACTION = "start"
-        private const val STOP_ACTION = "stop"
+        private const val NOTIFICATION_ID = 1122
         private const val REPLY_ACTION = "reply"
         private const val REMOTE_INPUT_RESULT_KEY = "pairing_code"
         private const val HOST_KEY = "pairing_host"
+        private const val PORT_KEY = "pairing_port"
     }
 
-    private val nm by lazy { getSystemService(NotificationManager::class.java) }
-    private val scope = CoroutineScope(Dispatchers.IO)
-    
-    // Observer dari file AdbMdns kamu. Jika port ketemu, langsung ubah Notifikasi!
-    private val observer = Observer<Int> { port ->
-        Log.i(TAG, "Layanan Wireless Debugging Ditemukan di port=$port")
-        nm.notify(NOTIFICATION_ID, createInputNotification(port))
-    }
-    
-    private val adbMdns by lazy { AdbMdns(this, AdbMdns.TLS_CONNECT, observer) }
+    private lateinit var notificationManager: NotificationManager
+    private var adbMdns: AdbMdns? = null
 
     override fun onCreate() {
         super.onCreate()
-        val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL,
-            "Wireless Debugging Pairing",
-            NotificationManager.IMPORTANCE_HIGH
-        )
-        nm.createNotificationChannel(channel)
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) return START_NOT_STICKY
+        when (intent?.action) {
+            "start" -> startSearching()
+            REPLY_ACTION -> handleReply(intent)
+            "stop" -> stopSelf()
+        }
+        return START_STICKY
+    }
 
-        when (intent.action) {
-            STOP_ACTION -> {
-                adbMdns.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-            REPLY_ACTION -> {
-                // Menangkap 6 digit kode dari tombol "Reply" di Notifikasi
-                val code = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(REMOTE_INPUT_RESULT_KEY)?.toString()
-                val port = intent.getIntExtra(HOST_KEY, 0)
-                
-                if (code.isNullOrBlank()) return START_NOT_STICKY
-                
-                nm.notify(NOTIFICATION_ID, workingNotification)
-                
-                scope.launch {
-                    try {
-                        val pairingClient = AdbPairingClient("127.0.0.1", port, code)
-                        val result = pairingClient.pair()
-                        pairingClient.close()
+    private fun startSearching() {
+        // Memunculkan notifikasi pencarian awal
+        startForeground(NOTIFICATION_ID, buildSearchingNotification())
 
-                        if (result) {
-                            // SUKSES! Simpan status ke SharedPreferences KyrooS
-                            val prefs = getSharedPreferences("kyroos_prefs", Context.MODE_PRIVATE)
-                            prefs.edit().putBoolean("paired", true).apply()
-                            
-                            val successNotif = Notification.Builder(this@AdbPairingService, NOTIFICATION_CHANNEL)
-                                .setContentTitle("KyrooS Pairing Sukses!")
-                                .setContentText("Silakan buka ulang aplikasi KyrooS.")
-                                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                                .build()
-                            nm.notify(NOTIFICATION_ID, successNotif)
-                        } else {
-                            nm.notify(NOTIFICATION_ID, failedNotification(port))
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Pairing Error", e)
-                        nm.notify(NOTIFICATION_ID, failedNotification(port))
-                    }
-                    
-                    adbMdns.stop()
-                    stopForeground(STOP_FOREGROUND_DETACH)
-                }
-            }
-            else -> {
-                // Saat tombol di App ditekan, mulai mencari via MDNS
+        // Memanggil AdbMdns, jika port ditemukan maka notifikasi diubah untuk input PIN
+        adbMdns = AdbMdns(this, "_adb-tls-pairing._tcp", Observer { port ->
+            val host = "127.0.0.1" // Default localhost untuk perangkat yang sama
+            notificationManager.notify(NOTIFICATION_ID, buildInputNotification(host, port))
+        })
+        adbMdns?.start()
+    }
+
+    private fun handleReply(intent: Intent) {
+        val remoteInput = RemoteInput.getResultsFromIntent(intent)
+        val pairingCode = remoteInput?.getCharSequence(REMOTE_INPUT_RESULT_KEY)?.toString()
+        val host = intent.getStringExtra(HOST_KEY) ?: "127.0.0.1"
+        val port = intent.getIntExtra(PORT_KEY, -1)
+
+        if (pairingCode != null && port != -1) {
+            // Ubah notifikasi menjadi sedang memproses
+            notificationManager.notify(NOTIFICATION_ID, buildWorkingNotification())
+
+            // Eksekusi proses Pairing libadb.so di Background
+            CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    startForeground(NOTIFICATION_ID, searchingNotification)
-                    adbMdns.start()
+                    val adbKey = AdbKey(getSharedPreferences("adb_prefs", Context.MODE_PRIVATE))
+                    val client = AdbPairingClient(host, port, pairingCode, adbKey)
+                    
+                    val success = client.start()
+                    client.close()
+
+                    if (success) {
+                        // Simpan port yang berhasil dipairing untuk digunakan oleh WebView / MainActivity nanti
+                        getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+                            .edit().putInt("paired_port", port).apply()
+
+                        notificationManager.notify(NOTIFICATION_ID, buildSuccessNotification())
+                        stopSelf()
+                    } else {
+                        notificationManager.notify(NOTIFICATION_ID, buildErrorNotification("Kode Salah atau Kadaluarsa!"))
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Gagal menjalankan Foreground Service", e)
+                    notificationManager.notify(NOTIFICATION_ID, buildErrorNotification(e.message ?: "Gagal Pairing"))
                 }
             }
         }
-        return START_NOT_STICKY
     }
 
-    // --- UI NOTIFIKASI AXERON ---
-    private val stopNotificationAction by lazy {
-        val intent = Intent(this, AdbPairingService::class.java).apply { action = STOP_ACTION }
-        val pendingIntent = PendingIntent.getService(this, STOP_REQUEST_CODE, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        Notification.Action.Builder(null, "Batalkan", pendingIntent).build()
-    }
+    // --- PEMBUATAN UI NOTIFIKASI ---
 
-    private fun replyNotificationAction(port: Int): Notification.Action {
-        val remoteInput = RemoteInput.Builder(REMOTE_INPUT_RESULT_KEY).setLabel("Masukkan 6 Digit Kode Pairing").build()
-        val intent = Intent(this, AdbPairingService::class.java).apply { 
-            action = REPLY_ACTION
-            putExtra(HOST_KEY, port)
-        }
-        val pendingIntent = PendingIntent.getService(this, REPLY_REQUEST_CODE, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return Notification.Action.Builder(null, "Masukkan Kode", pendingIntent).addRemoteInput(remoteInput).build()
-    }
-
-    private val searchingNotification by lazy {
-        Notification.Builder(this, NOTIFICATION_CHANNEL)
-            .setContentTitle("Mencari Wireless Debugging...")
-            .setContentText("Pastikan fitur ini menyala di Opsi Developer")
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .addAction(stopNotificationAction)
-            .build()
-    }
-
-    private fun createInputNotification(port: Int): Notification {
+    private fun buildSearchingNotification(): Notification {
         return Notification.Builder(this, NOTIFICATION_CHANNEL)
-            .setContentTitle("Layanan Ditemukan! (Port: $port)")
-            .setContentText("Klik 'Masukkan Kode' di bawah ini")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .addAction(replyNotificationAction(port))
-            .addAction(stopNotificationAction)
+            .setContentTitle("Mencari layanan Pairing ADB...")
+            .setContentText("Nyalakan Wireless Debugging di Opsi Pengembang.")
             .build()
     }
 
-    private val workingNotification by lazy {
-        Notification.Builder(this, NOTIFICATION_CHANNEL)
-            .setContentTitle("Sedang memverifikasi kode...")
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setProgress(0, 0, true)
+    private fun buildInputNotification(host: String, port: Int): Notification {
+        val remoteInput = RemoteInput.Builder(REMOTE_INPUT_RESULT_KEY)
+            .setLabel("Masukkan 6 digit kode pairing")
             .build()
-    }
 
-    private fun failedNotification(port: Int): Notification {
+        val replyIntent = Intent(this, AdbPairingService::class.java).apply {
+            action = REPLY_ACTION
+            putExtra(HOST_KEY, host)
+            putExtra(PORT_KEY, port)
+        }
+
+        val pendingIntent = PendingIntent.getService(
+            this, 0, replyIntent,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val action = Notification.Action.Builder(
+            android.R.drawable.ic_menu_send, "Masukkan Kode", pendingIntent
+        ).addRemoteInput(remoteInput).build()
+
         return Notification.Builder(this, NOTIFICATION_CHANNEL)
-            .setContentTitle("Pairing Gagal")
-            .setContentText("Kode salah atau koneksi terputus. Coba lagi.")
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .addAction(replyNotificationAction(port))
-            .addAction(stopNotificationAction)
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentTitle("Pairing ADB Ditemukan")
+            .setContentText("Ketuk 'Masukkan Kode' lalu ketik 6 digit angka dari pengaturan.")
+            .addAction(action)
             .build()
+    }
+
+    private fun buildWorkingNotification() = Notification.Builder(this, NOTIFICATION_CHANNEL)
+        .setSmallIcon(android.R.drawable.ic_popup_sync)
+        .setContentTitle("Memproses otentikasi...")
+        .build()
+
+    private fun buildSuccessNotification() = Notification.Builder(this, NOTIFICATION_CHANNEL)
+        .setSmallIcon(android.R.drawable.checkbox_on_background)
+        .setContentTitle("Pairing Berhasil!")
+        .setContentText("KyrooS siap digunakan.")
+        .setAutoCancel(true)
+        .build()
+
+    private fun buildErrorNotification(msg: String) = Notification.Builder(this, NOTIFICATION_CHANNEL)
+        .setSmallIcon(android.R.drawable.ic_delete)
+        .setContentTitle("Gagal Pairing")
+        .setContentText(msg)
+        .build()
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL,
+                "ADB Pairing Service",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        adbMdns?.stop()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
