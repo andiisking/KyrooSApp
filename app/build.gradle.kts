@@ -9,8 +9,6 @@ android {
         applicationId = "com.kyroos.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "8.0"
     }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.1" }
@@ -27,7 +25,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    // Library Kriptografi untuk Engine Axeron
     implementation("org.bouncycastle:bcpkix-jdk15on:1.70")
     implementation("org.conscrypt:conscrypt-android:2.5.2")
     implementation("dev.rikka.rikkax.core:core:1.4.1")
