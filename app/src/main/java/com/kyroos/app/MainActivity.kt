@@ -41,11 +41,11 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-            } else { startPairingService() }
-        } else { startPairingService() }
+            } else { startPairing() }
+        } else { startPairing() }
     }
 
-    private fun startPairingService() {
+    private fun startPairing() {
         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         if (prefs.getInt("paired_port", -1) == -1) {
             val intent = Intent(this, AdbPairingService::class.java).apply { action = "start" }
@@ -64,10 +64,10 @@ class KyroosAdbInterface(private val context: Context) {
         return try {
             runBlocking(Dispatchers.IO) {
                 val key = AdbKey(prefs)
-                // Urutan Axeron: (AdbKey, Port, Host)
+                // Urutan parameter asli Axeron: (AdbKey, Port, Host)
                 val client = AdbClient(key, port, "127.0.0.1")
                 
-                // Membuka stream shell sesuai protokol Axeron
+                // Membuka stream shell sesuai AdbClient.kt asli
                 val stream = client.open("shell:$command")
                 val result = stream.readAll().toString(Charsets.UTF_8)
                 

@@ -1,7 +1,6 @@
 package frb.axeron.adb
 
 import android.app.*
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -9,8 +8,8 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Observer
 
 class AdbPairingService : Service() {
-    private var adbMdns: AdbMdns? = null
     private val CHANNEL_ID = "adb_pairing"
+    private var adbMdns: AdbMdns? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,16 +43,13 @@ class AdbPairingService : Service() {
 
         if (port != null) {
             val remoteInput = androidx.core.app.RemoteInput.Builder("pairing_code").setLabel("Kode 6 Digit").build()
-            val intent = Intent(this, AdbPairingReceiver::class.java).apply { 
+            val intent = Intent(this, AdbPairingReceiver::class.java).apply {
                 putExtra("pairing_port", port)
             }
             val pi = PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
-            
-            val action = NotificationCompat.Action.Builder(0, "MASUKKAN KODE", pi)
-                .addRemoteInput(remoteInput).build()
+            val action = NotificationCompat.Action.Builder(0, "INPUT KODE", pi).addRemoteInput(remoteInput).build()
             builder.addAction(action)
         }
-
         return builder.build()
     }
 

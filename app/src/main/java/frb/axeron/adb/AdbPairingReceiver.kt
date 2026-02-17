@@ -15,24 +15,24 @@ class AdbPairingReceiver : BroadcastReceiver() {
         if (results != null && port != -1) {
             val code = results.getCharSequence("pairing_code").toString()
             
-            // Constructor Asli Axeron: (Context, Host, Port)
+            // Constructor asli Axeron: AdbPairingClient(Context, Host, Port)
             val pairingClient = AdbPairingClient(context, host, port)
             
             try {
-                // Metode pair asli Axeron hanya butuh satu parameter (pairingCode)
+                // Fungsi pair asli Axeron hanya menerima 1 parameter: pairingCode
                 if (pairingClient.pair(code)) {
                     val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
                     prefs.edit().putInt("paired_port", port).apply()
                     
                     Toast.makeText(context, "KyrooS Berhasil Terhubung!", Toast.LENGTH_SHORT).show()
                     
-                    // Beritahu service untuk berhenti scan
+                    // Berhentikan scan pairing
                     context.startService(Intent(context, AdbPairingService::class.java).apply {
                         action = "stop"
                     })
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Pairing Gagal: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_LONG).show()
             } finally {
                 // AdbPairingClient Axeron mengimplementasikan Closeable
                 try { pairingClient.close() } catch (e: Exception) {}
