@@ -3,7 +3,7 @@ package frb.axeron.adb
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
-import com.android.org.conscrypt.Conscrypt
+import org.conscrypt.Conscrypt
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -26,8 +26,9 @@ private const val kExportedKeySize = 64
 private const val kPairingPacketHeaderSize = 6
 
 private class PeerInfo(
-        val type: Byte,
-        data: ByteArray) {
+    val type: Byte,
+    data: ByteArray
+) {
 
     val data = ByteArray(kMaxPeerInfoSize - 1)
 
@@ -45,7 +46,6 @@ private class PeerInfo(
             put(type)
             put(data)
         }
-
         Log.d(TAG, "write PeerInfo ${toStringShort()}")
     }
 
@@ -58,7 +58,6 @@ private class PeerInfo(
     }
 
     companion object {
-
         fun readFrom(buffer: ByteBuffer): PeerInfo {
             val type = buffer.get()
             val data = ByteArray(kMaxPeerInfoSize - 1)
@@ -69,9 +68,10 @@ private class PeerInfo(
 }
 
 private class PairingPacketHeader(
-        val version: Byte,
-        val type: Byte,
-        val payload: Int) {
+    val version: Byte,
+    val type: Byte,
+    val payload: Int
+) {
 
     enum class Type(val value: Byte) {
         SPAKE2_MSG(0.toByte()),
@@ -84,7 +84,6 @@ private class PairingPacketHeader(
             put(type)
             putInt(payload)
         }
-
         Log.d(TAG, "write PairingPacketHeader ${toStringShort()}")
     }
 
@@ -97,22 +96,21 @@ private class PairingPacketHeader(
     }
 
     companion object {
-
         fun readFrom(buffer: ByteBuffer): PairingPacketHeader? {
             val version = buffer.get()
             val type = buffer.get()
             val payload = buffer.int
 
             if (version < kMinSupportedKeyHeaderVersion || version > kMaxSupportedKeyHeaderVersion) {
-                Log.e(TAG, "PairingPacketHeader version mismatch (us=$kCurrentKeyHeaderVersion them=${version})")
+                Log.e(TAG, "PairingPacketHeader version mismatch (us=$kCurrentKeyHeaderVersion them=$version)")
                 return null
             }
             if (type != Type.SPAKE2_MSG.value && type != Type.PEER_INFO.value) {
-                Log.e(TAG, "Unknown PairingPacket type=${type}")
+                Log.e(TAG, "Unknown PairingPacket type=$type")
                 return null
             }
             if (payload <= 0 || payload > kMaxPayloadSize) {
-                Log.e(TAG, "header payload not within a safe payload size (size=${payload})")
+                Log.e(TAG, "header payload not within a safe payload size (size=$payload)")
                 return null
             }
 
@@ -125,32 +123,23 @@ private class PairingPacketHeader(
 
 private class PairingContext private constructor(private val nativePtr: Long) {
 
-    val msg: ByteArray
+    val msg: ByteArray = nativeMsg(nativePtr)
 
-    init {
-        msg = nativeMsg(nativePtr)
-    }
+    fun initCipher(theirMsg: ByteArray): Boolean = nativeInitCipher(nativePtr, theirMsg)
 
-    fun initCipher(theirMsg: ByteArray) = nativeInitCipher(nativePtr, theirMsg)
+    fun encrypt(input: ByteArray): ByteArray? = nativeEncrypt(nativePtr, input)
 
-    fun encrypt(`in`: ByteArray) = nativeEncrypt(nativePtr, `in`)
-
-    fun decrypt(`in`: ByteArray) = nativeDecrypt(nativePtr, `in`)
+    fun decrypt(input: ByteArray): ByteArray? = nativeDecrypt(nativePtr, input)
 
     fun destroy() = nativeDestroy(nativePtr)
 
     private external fun nativeMsg(nativePtr: Long): ByteArray
-
     private external fun nativeInitCipher(nativePtr: Long, theirMsg: ByteArray): Boolean
-
     private external fun nativeEncrypt(nativePtr: Long, inbuf: ByteArray): ByteArray?
-
     private external fun nativeDecrypt(nativePtr: Long, inbuf: ByteArray): ByteArray?
-
     private external fun nativeDestroy(nativePtr: Long)
 
     companion object {
-
         fun create(password: ByteArray): PairingContext? {
             val nativePtr = nativeConstructor(true, password)
             return if (nativePtr != 0L) PairingContext(nativePtr) else null
@@ -162,7 +151,12 @@ private class PairingContext private constructor(private val nativePtr: Long) {
 }
 
 @RequiresApi(Build.VERSION_CODES.R)
-class AdbPairingClient(private val host: String, private val port: Int, private val pairCode: String, private val key: AdbKey) : Closeable {
+class AdbPairingClient(
+    private val host: String,
+    private val port: Int,
+    private val pairCode: String,
+    private val key: AdbKey
+) : Closeable {
 
     private enum class State {
         Ready,
@@ -179,54 +173,87 @@ class AdbPairingClient(private val host: String, private val port: Int, private 
     private lateinit var pairingContext: PairingContext
     private var state: State = State.Ready
 
+    /**
+     * Memulai proses pairing ADB wireless
+     * @return true jika pairing berhasil, false jika gagal
+     */
     fun start(): Boolean {
-        setupTlsConnection()
+        return try {
+            setupTlsConnection()
+            
+            state = State.ExchangingMsgs
+            if (!doExchangeMsgs()) {
+                state = State.Stopped
+                return false
+            }
 
-        state = State.ExchangingMsgs
+            state = State.ExchangingPeerInfo
+            if (!doExchangePeerInfo()) {
+                state = State.Stopped
+                return false
+            }
 
-        if (!doExchangeMsgs()) {
             state = State.Stopped
-            return false
-        }
-
-        state = State.ExchangingPeerInfo
-
-        if (!doExchangePeerInfo()) {
+            Log.i(TAG, "Pairing completed successfully")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Pairing failed", e)
             state = State.Stopped
-            return false
+            false
         }
-
-        state = State.Stopped
-        return true
     }
 
+    /**
+     * Setup koneksi TLS ke service pairing
+     */
     private fun setupTlsConnection() {
+        Log.d(TAG, "Connecting to $host:$port")
+        
         socket = Socket(host, port)
         socket.tcpNoDelay = true
 
         val sslContext = key.sslContext
         val sslSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
+        
+        Log.d(TAG, "Starting TLS handshake...")
         sslSocket.startHandshake()
-        Log.d(TAG, "Handshake succeeded.")
+        Log.d(TAG, "TLS handshake succeeded")
 
         inputStream = DataInputStream(sslSocket.inputStream)
         outputStream = DataOutputStream(sslSocket.outputStream)
 
-        val pairCodeBytes = pairCode.toByteArray()
-        val keyMaterial = Conscrypt.exportKeyingMaterial(sslSocket, kExportedKeyLabel, null, kExportedKeySize)
+        // Export keying material dari TLS session
+        val pairCodeBytes = pairCode.toByteArray(Charsets.UTF_8)
+        val keyMaterial = Conscrypt.exportKeyingMaterial(
+            sslSocket,
+            kExportedKeyLabel,
+            null,
+            kExportedKeySize
+        )
+
+        // Gabungkan pairing code dengan key material
         val passwordBytes = ByteArray(pairCode.length + keyMaterial.size)
         pairCodeBytes.copyInto(passwordBytes)
         keyMaterial.copyInto(passwordBytes, pairCodeBytes.size)
 
-        val pairingContext = PairingContext.create(passwordBytes)
-        checkNotNull(pairingContext) { "Unable to create PairingContext." }
-        this.pairingContext = pairingContext
+        Log.d(TAG, "Creating pairing context...")
+        val ctx = PairingContext.create(passwordBytes)
+        checkNotNull(ctx) { "Unable to create PairingContext" }
+        pairingContext = ctx
+        
+        Log.d(TAG, "Setup completed, ready for SPAKE2 exchange")
     }
 
+    /**
+     * Buat header packet pairing
+     */
     private fun createHeader(type: PairingPacketHeader.Type, payloadSize: Int): PairingPacketHeader {
         return PairingPacketHeader(kCurrentKeyHeaderVersion, type.value, payloadSize)
     }
 
+    /**
+     * Baca header dari input stream
+     */
     private fun readHeader(): PairingPacketHeader? {
         val bytes = ByteArray(kPairingPacketHeaderSize)
         inputStream.readFully(bytes)
@@ -234,81 +261,137 @@ class AdbPairingClient(private val host: String, private val port: Int, private 
         return PairingPacketHeader.readFrom(buffer)
     }
 
+    /**
+     * Tulis header dan payload ke output stream
+     */
     private fun writeHeader(header: PairingPacketHeader, payload: ByteArray) {
         val buffer = ByteBuffer.allocate(kPairingPacketHeaderSize).order(ByteOrder.BIG_ENDIAN)
         header.writeTo(buffer)
 
         outputStream.write(buffer.array())
         outputStream.write(payload)
+        outputStream.flush()
         Log.d(TAG, "write payload, size=${payload.size}")
     }
 
+    /**
+     * Lakukan pertukaran SPAKE2 messages
+     */
     private fun doExchangeMsgs(): Boolean {
+        Log.d(TAG, "Starting SPAKE2 message exchange")
+        
         val msg = pairingContext.msg
-        val size = msg.size
-
-        val ourHeader = createHeader(PairingPacketHeader.Type.SPAKE2_MSG, size)
+        val ourHeader = createHeader(PairingPacketHeader.Type.SPAKE2_MSG, msg.size)
         writeHeader(ourHeader, msg)
 
-        val theirHeader = readHeader() ?: return false
-        if (theirHeader.type != PairingPacketHeader.Type.SPAKE2_MSG.value) return false
+        val theirHeader = readHeader() ?: run {
+            Log.e(TAG, "Failed to read peer header")
+            return false
+        }
+        
+        if (theirHeader.type != PairingPacketHeader.Type.SPAKE2_MSG.value) {
+            Log.e(TAG, "Unexpected message type: ${theirHeader.type}")
+            return false
+        }
 
         val theirMessage = ByteArray(theirHeader.payload)
         inputStream.readFully(theirMessage)
+        Log.d(TAG, "Received peer SPAKE2 message, size=${theirMessage.size}")
 
         return pairingContext.initCipher(theirMessage)
     }
 
+    /**
+     * Lakukan pertukaran informasi peer (public key)
+     */
     private fun doExchangePeerInfo(): Boolean {
+        Log.d(TAG, "Starting peer info exchange")
+        
         val buf = ByteBuffer.allocate(kMaxPeerInfoSize).order(ByteOrder.BIG_ENDIAN)
         peerInfo.writeTo(buf)
 
-        val outbuf = pairingContext.encrypt(buf.array()) ?: return false
+        val encrypted = pairingContext.encrypt(buf.array()) ?: run {
+            Log.e(TAG, "Failed to encrypt peer info")
+            return false
+        }
 
-        val ourHeader = createHeader(PairingPacketHeader.Type.PEER_INFO, outbuf.size)
-        writeHeader(ourHeader, outbuf)
+        val ourHeader = createHeader(PairingPacketHeader.Type.PEER_INFO, encrypted.size)
+        writeHeader(ourHeader, encrypted)
 
-        val theirHeader = readHeader() ?: return false
-        if (theirHeader.type != PairingPacketHeader.Type.PEER_INFO.value) return false
+        val theirHeader = readHeader() ?: run {
+            Log.e(TAG, "Failed to read peer info header")
+            return false
+        }
+        
+        if (theirHeader.type != PairingPacketHeader.Type.PEER_INFO.value) {
+            Log.e(TAG, "Unexpected peer info type: ${theirHeader.type}")
+            return false
+        }
 
         val theirMessage = ByteArray(theirHeader.payload)
         inputStream.readFully(theirMessage)
 
-        val decrypted = pairingContext.decrypt(theirMessage) ?: throw AdbInvalidPairingCodeException()
+        val decrypted = pairingContext.decrypt(theirMessage) ?: run {
+            Log.e(TAG, "Failed to decrypt peer info - invalid pairing code?")
+            throw AdbInvalidPairingCodeException()
+        }
+        
         if (decrypted.size != kMaxPeerInfoSize) {
-            Log.e(TAG, "Got size=${decrypted.size} PeerInfo.size=$kMaxPeerInfoSize")
+            Log.e(TAG, "Invalid peer info size: ${decrypted.size}, expected: $kMaxPeerInfoSize")
             return false
         }
+
         val theirPeerInfo = PeerInfo.readFrom(ByteBuffer.wrap(decrypted))
-        Log.d(TAG, theirPeerInfo.toString())
+        Log.d(TAG, "Received peer info: $theirPeerInfo")
+        
+        // Di sini bisa ditambahkan validasi public key peer jika diperlukan
+        
         return true
     }
 
+    /**
+     * Tutup semua resource
+     */
     override fun close() {
+        Log.d(TAG, "Closing pairing client")
+        
         try {
-            inputStream.close()
+            if (::inputStream.isInitialized) inputStream.close()
         } catch (e: Throwable) {
+            Log.w(TAG, "Error closing input stream", e)
         }
+        
         try {
-            outputStream.close()
+            if (::outputStream.isInitialized) outputStream.close()
         } catch (e: Throwable) {
+            Log.w(TAG, "Error closing output stream", e)
         }
+        
         try {
-            socket.close()
+            if (::socket.isInitialized) socket.close()
         } catch (e: Exception) {
+            Log.w(TAG, "Error closing socket", e)
         }
 
-        if (state != State.Ready) {
+        if (state != State.Ready && ::pairingContext.isInitialized) {
             pairingContext.destroy()
         }
     }
 
     companion object {
-
         init {
-            System.loadLibrary("adb")
+            try {
+                System.loadLibrary("adb")
+                Log.d(TAG, "Native library loaded successfully")
+            } catch (e: UnsatisfiedLinkError) {
+                Log.e(TAG, "Failed to load native library", e)
+                throw e
+            }
         }
 
+        /**
+         * Cek apakah pairing tersedia (native library bisa diload)
+         */
         @JvmStatic
         external fun available(): Boolean
     }

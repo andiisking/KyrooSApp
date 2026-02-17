@@ -133,12 +133,18 @@ class AdbKey(private val context: Context, private val name: String) {
         return cipher.doFinal(data)
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
-    val sslContext: SSLContext by lazy {
-        val ctx = SSLContext.getInstance("TLSv1.3")
-        ctx.init(arrayOf(keyManager), arrayOf(trustManager), SecureRandom())
-        ctx
-    }
+    private var _sslContext: SSLContext? = null
+    
+    val sslContext: SSLContext
+        @RequiresApi(Build.VERSION_CODES.R)
+        get() {
+            if (_sslContext == null) {
+                val ctx = SSLContext.getInstance("TLSv1.3")
+                ctx.init(arrayOf(keyManager), arrayOf(trustManager), SecureRandom())
+                _sslContext = ctx
+            }
+            return _sslContext!!
+        }
 
     private val keyManager get() = object : X509ExtendedKeyManager() {
         override fun chooseClientAlias(t: Array<out String>, i: Array<out Principal>?, s: Socket?) = "key"

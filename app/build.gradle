@@ -15,38 +15,59 @@ android {
         versionName "1.0"
     }
 
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    
     kotlinOptions {
         jvmTarget = '17'
+    }
+    
+    // Tambahkan packagingOptions untuk menghindari konflik BouncyCastle
+    packagingOptions {
+        pickFirst '**/BCKEY.DSA'
+        pickFirst '**/BCKEY.SF'
+        pickFirst 'META-INF/BCKEY.DSA'
+        pickFirst 'META-INF/BCKEY.SF'
+        pickFirst 'META-INF/**.SF'
+        pickFirst 'META-INF/**.DSA'
+        pickFirst 'META-INF/**.RSA'
     }
 }
 
 dependencies {
-    // 1. Dasar Kotlin & Android Core
+    // 1. Kotlin Core
     implementation 'androidx.core:core-ktx:1.12.0'
     
-    // 2. GUNAKAN RIKKAX (Hapus androidx.appcompat:appcompat standar)
-    implementation 'dev.rikka.rikkax.appcompat:appcompat:1.6.1'
-    implementation 'dev.rikka.rikkax.core:core:1.4.1'
+    // 2. AppCompat standar (gunakan yang standar, bukan RikkaX yang bermasalah)
+    implementation 'androidx.appcompat:appcompat:1.6.1'
     
-    // 3. Material Components (Wajib untuk tema)
+    // 3. Material Components
     implementation 'com.google.android.material:material:1.10.0'
     
-    // 4. Lifecycle & Coroutines (Wajib untuk Service & Background Task)
+    // 4. Lifecycle
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
     implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.6.2'
+    
+    // 5. Conscrypt untuk TLS/SSL
+    implementation 'org.conscrypt:conscrypt-android:2.5.2'
+    
+    // 6. BouncyCastle (gunakan versi jdk15to18 untuk Android)
+    implementation 'org.bouncycastle:bcprov-jdk15to18:1.78.1'
+    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.78.1'
+    
+    // 7. Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     
-    // 5. Enkripsi ADB (Wajib)
-    implementation 'org.conscrypt:conscrypt-android:2.5.2'
-    implementation 'org.bouncycastle:bcprov-jdk15to18:1.70'
-    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.70'
+    // 8. Hapus atau comment RikkaX jika tidak digunakan di tempat lain
+    // implementation 'dev.rikka.rikkax.appcompat:appcompat:1.6.1'
+    // implementation 'dev.rikka.rikkax.core:core:1.4.1'
 }
-
-
-
-
-
