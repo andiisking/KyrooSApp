@@ -159,8 +159,46 @@ class MainActivity : AppCompatActivity() {
 
 class KyroosAdbInterface(private val context: Context) {
     
+    /**
+     * Method untuk eksekusi shell command (SYNC - return langsung)
+     * Digunakan oleh JavaScript yang memanggil: KyroosApp.executeShell(cmd)
+     */
+    @JavascriptInterface
+    fun executeShell(command: String): String {
+        Log.d("KyroosAdb", "executeShell (sync) called: $command")
+        
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        val port = prefs.getInt("paired_port", -1)
+        
+        if (port == -1) {
+            return "Error: Perangkat belum dipairing!"
+        }
+
+        return try {
+            val key = AdbKey(context, "kyroos_device") 
+            val client = AdbClient(key, port, "127.0.0.1")
+            
+            client.connect() 
+            val stream = client.open("shell:$command")
+            val result = stream.readAll().toString(Charsets.UTF_8)
+            
+            stream.close()
+            client.close()
+            result
+        } catch (e: Exception) {
+            Log.e("KyroosAdb", "executeShell error: ${e.message}")
+            "Error: ${e.message}"
+        }
+    }
+    
+    /**
+     * Method untuk eksekusi shell command (ASYNC dengan callback)
+     * Digunakan oleh JavaScript yang memanggil: KyroosApp.executeShell(cmd, callbackId)
+     */
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
+        Log.d("KyroosAdb", "executeShell (async) called: $command, callbackId: $callbackId")
+        
         val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val port = prefs.getInt("paired_port", -1)
         
@@ -200,27 +238,13 @@ class KyroosAdbInterface(private val context: Context) {
         }
     }
     
+    /**
+     * Method untuk eksekusi shell command (SYNC - return langsung)
+     * Alias dari executeShell(command: String) untuk kompatibilitas
+     */
     @JavascriptInterface
     fun executeShellSync(command: String): String {
-        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
-        val port = prefs.getInt("paired_port", -1)
-        
-        if (port == -1) return "Error: Perangkat belum dipairing!"
-
-        return try {
-            val key = AdbKey(context, "kyroos_device") 
-            val client = AdbClient(key, port, "127.0.0.1")
-            
-            client.connect() 
-            val stream = client.open("shell:$command")
-            val result = stream.readAll().toString(Charsets.UTF_8)
-            
-            stream.close()
-            client.close()
-            result
-        } catch (e: Exception) {
-            "Error: ${e.message}"
-        }
+        return executeShell(command)
     }
     
     @JavascriptInterface
