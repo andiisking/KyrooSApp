@@ -16,7 +16,7 @@ import androidx.core.content.ContextCompat
 import frb.axeron.adb.AdbClient
 import frb.axeron.adb.AdbKey
 import frb.axeron.adb.AdbPairingService
-import com.kyroos.app.R
+import com.kyroos.app.R 
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -32,9 +32,7 @@ class MainActivity : AppCompatActivity() {
         webSettings.allowFileAccess = true
         webView.webViewClient = WebViewClient()
 
-        // Registrasi jembatan KyroosApp ke JavaScript
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
-        
         webView.loadUrl("file:///android_asset/index.html")
 
         checkPermissions()
@@ -44,12 +42,8 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-            } else {
-                startPairingService()
-            }
-        } else {
-            startPairingService()
-        }
+            } else { startPairingService() }
+        } else { startPairingService() }
     }
 
     private fun startPairingService() {
@@ -57,10 +51,6 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(this, AdbPairingService::class.java).apply { action = "start" }
             startForegroundService(intent)
         }
-    }
-
-    override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 }
 
@@ -70,16 +60,10 @@ class KyroosAdbInterface(private val context: Context) {
         return try {
             val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
             val port = prefs.getInt("paired_port", -1)
-            
-            if (port == -1) return "Error: ADB belum dipairing!"
-
+            if (port == -1) return "Error: Belum Pairing!"
             val adbKey = AdbKey(prefs)
             val client = AdbClient(adbKey, "127.0.0.1", port)
-            
-            // Eksekusi dan ambil outputnya
             client.execute(command)
-        } catch (e: Exception) {
-            "Error: ${e.message}"
-        }
+        } catch (e: Exception) { "Error: ${e.message}" }
     }
 }
