@@ -2,7 +2,6 @@ package frb.axeron.adb
 
 import org.conscrypt.Conscrypt
 import java.security.Security
-import javax.net.ssl.SSLContext
 
 class AdbPairingClient(private val adbKey: AdbKey) {
     init {
@@ -13,13 +12,12 @@ class AdbPairingClient(private val adbKey: AdbKey) {
 
     fun pair(host: String, port: Int, pairingCode: String): Boolean {
         return try {
-            // Gunakan port dari AdbMdns
-            val sslContext = SSLContext.getInstance("TLS", "Conscrypt")
-            sslContext.init(null, null, null)
+            val adbClient = AdbClient(adbKey, host, port)
+            val result = adbClient.doPair(pairingCode)
             
-            // Logika native pairing akan diproses di sini
-            // Untuk sementara kita buat sukses agar alur UI berjalan
-            true 
+            // Cek apakah hasil dari native mengandung kata gagal atau tidak
+            // Biasanya jika sukses, .so akan mengembalikan string kosong atau 'success'
+            !result.contains("fail", ignoreCase = true) && !result.contains("error", ignoreCase = true)
         } catch (e: Exception) {
             false
         }
