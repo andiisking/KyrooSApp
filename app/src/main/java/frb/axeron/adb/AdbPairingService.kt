@@ -18,6 +18,7 @@ import androidx.annotation.RequiresApi
 import androidx.lifecycle.Observer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -37,7 +38,6 @@ class AdbPairingService : Service() {
         private const val REMOTE_INPUT_RESULT_KEY = "pairing_code"
         private const val PORT_KEY = "pairing_port"
 
-        // ✅ BARU: Action untuk broadcast hasil pairing
         const val PAIRING_SUCCESS_ACTION = "frb.axeron.adb.PAIRING_SUCCESS"
         const val PAIRING_FAILED_ACTION = "frb.axeron.adb.PAIRING_FAILED"
         const val EXTRA_PORT = "port"
@@ -50,17 +50,28 @@ class AdbPairingService : Service() {
             Intent(context, AdbPairingService::class.java).setAction(STOP_ACTION)
     }
 
-    private var adbMdns: AdbMdns? = null
+    private var pairingMdns: AdbMdns? = null
+    private var connectMdns: AdbMdns? = null
     private var isPairingInProgress = false
     private var isServiceStopping = false
-    private var currentPort: Int = -1
+    private var currentPairingPort: Int = -1
+    private var foundConnectPort: Int = -1
 
-    private val observerPairing = Observer<Int> { port ->
+    private val pairingObserver = Observer<Int> { port ->
         if (port > 0 && !isServiceStopping && !isPairingInProgress) {
             Log.d(TAG, "Pairing service found on port $port")
-            currentPort = port
+            currentPairingPort = port
             val nm = getSystemService(NotificationManager::class.java)
             nm.notify(NOTIFICATION_ID, createInputNotification(port))
+        }
+    }
+
+    private val connectObserver = Observer<Int> { port ->
+        if (port > 0 && !isServiceStopping && foundConnectPort == -1) {
+            Log.d(TAG, "Connect service found on port $port")
+            foundConnectPort = port
+            // Setelah mendapatkan port koneksi, simpan dan beri tahu
+            handleConnectFound(port)
         }
     }
 
@@ -92,7 +103,7 @@ class AdbPairingService : Service() {
             START_ACTION -> {
                 if (!isPairingInProgress && !isServiceStopping) {
                     startForeground(NOTIFICATION_ID, searchingNotification)
-                    startDiscovery()
+                    startPairingDiscovery()
                 }
             }
             
@@ -109,7 +120,7 @@ class AdbPairingService : Service() {
                 if (!code.isNullOrBlank() && port != -1) {
                     if (code.matches(Regex("^\\d{6}$"))) {
                         isPairingInProgress = true
-                        stopDiscovery()
+                        stopPairingDiscovery()
                         
                         startForeground(NOTIFICATION_ID, workingNotification)
                         startPairing(code, port)
@@ -119,7 +130,7 @@ class AdbPairingService : Service() {
                     }
                 } else {
                     showErrorNotification("Kode atau port tidak valid")
-                    startForeground(NOTIFICATION_ID, createInputNotification(currentPort))
+                    startForeground(NOTIFICATION_ID, createInputNotification(currentPairingPort))
                 }
             }
             
@@ -132,20 +143,35 @@ class AdbPairingService : Service() {
         return START_STICKY
     }
 
-    private fun startDiscovery() {
-        Log.d(TAG, "Starting mDNS discovery")
-        stopDiscovery()
+    private fun startPairingDiscovery() {
+        Log.d(TAG, "Starting mDNS pairing discovery")
+        stopPairingDiscovery()
         
         isServiceStopping = false
-        adbMdns = AdbMdns(this, AdbMdns.TLS_PAIRING, observerPairing).apply { 
+        pairingMdns = AdbMdns(this, AdbMdns.TLS_PAIRING, pairingObserver).apply { 
             start() 
         }
     }
 
-    private fun stopDiscovery() {
-        Log.d(TAG, "Stopping mDNS discovery")
-        adbMdns?.stop()
-        adbMdns = null
+    private fun stopPairingDiscovery() {
+        Log.d(TAG, "Stopping mDNS pairing discovery")
+        pairingMdns?.stop()
+        pairingMdns = null
+    }
+
+    private fun startConnectDiscovery() {
+        Log.d(TAG, "Starting mDNS connect discovery")
+        stopConnectDiscovery()
+        
+        connectMdns = AdbMdns(this, AdbMdns.TLS_CONNECT, connectObserver).apply { 
+            start() 
+        }
+    }
+
+    private fun stopConnectDiscovery() {
+        Log.d(TAG, "Stopping mDNS connect discovery")
+        connectMdns?.stop()
+        connectMdns = null
     }
 
     private fun startPairing(code: String, port: Int) {
@@ -159,10 +185,23 @@ class AdbPairingService : Service() {
                 val success = pairingClient.use { it.start() }
                 
                 withContext(Dispatchers.Main) {
-                    isPairingInProgress = false
                     if (success) {
-                        handleSuccess(port)  // ✅ Kirim port yang berhasil
+                        // Pairing sukses, sekarang cari port koneksi
+                        Log.i(TAG, "Pairing successful, now searching for connect port...")
+                        isPairingInProgress = false
+                        startForeground(NOTIFICATION_ID, searchingConnectNotification)
+                        startConnectDiscovery()
+                        
+                        // Timeout jika tidak menemukan connect port dalam 30 detik
+                        CoroutineScope(Dispatchers.Main).launch {
+                            delay(30000)
+                            if (foundConnectPort == -1 && !isServiceStopping) {
+                                Log.e(TAG, "Timeout waiting for connect port")
+                                handleFailure("Tidak dapat menemukan port koneksi")
+                            }
+                        }
                     } else {
+                        isPairingInProgress = false
                         handleFailure("Pairing gagal, periksa kode dan coba lagi")
                     }
                 }
@@ -189,24 +228,24 @@ class AdbPairingService : Service() {
         }
     }
 
-    // ✅ PERBAIKAN: Tambah parameter port dan kirim broadcast
-    private fun handleSuccess(port: Int) {
-        Log.i(TAG, "Pairing successful on port $port! Stopping service...")
+    private fun handleConnectFound(port: Int) {
+        Log.i(TAG, "Connect port found: $port, stopping service...")
         
         isServiceStopping = true
-        isPairingInProgress = false
+        stopConnectDiscovery()
         
-        // ✅ BARU: Simpan port ke SharedPreferences
+        // Simpan port koneksi ke SharedPreferences
         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         prefs.edit().putInt("paired_port", port).apply()
         
-        // ✅ BARU: Kirim broadcast ke MainActivity
+        // Kirim broadcast dengan port yang benar
         val broadcastIntent = Intent(PAIRING_SUCCESS_ACTION).apply {
             putExtra(EXTRA_PORT, port)
-            setPackage(packageName)  // Hanya untuk app ini
+            setPackage(packageName)
         }
         sendBroadcast(broadcastIntent)
         
+        // Tampilkan notifikasi sukses
         val nm = getSystemService(NotificationManager::class.java)
         nm.cancel(NOTIFICATION_ID)
         
@@ -220,7 +259,7 @@ class AdbPairingService : Service() {
 
         nm.notify(SUCCESS_NOTIFICATION_ID, successNotification)
         
-        stopDiscovery()
+        // Hentikan service
         stopServiceInternal()
     }
 
@@ -229,7 +268,7 @@ class AdbPairingService : Service() {
         
         if (isServiceStopping) return
         
-        // ✅ BARU: Kirim broadcast gagal
+        // Kirim broadcast gagal
         val broadcastIntent = Intent(PAIRING_FAILED_ACTION).apply {
             putExtra(EXTRA_ERROR, message)
             setPackage(packageName)
@@ -247,10 +286,11 @@ class AdbPairingService : Service() {
 
         nm.notify(ERROR_NOTIFICATION_ID, errorNotification)
         
+        // Restart discovery setelah beberapa detik
         Handler(Looper.getMainLooper()).postDelayed({
             if (!isServiceStopping && !isPairingInProgress) {
-                Log.d(TAG, "Restarting discovery after failure")
-                startDiscovery()
+                Log.d(TAG, "Restarting pairing discovery after failure")
+                startPairingDiscovery()
                 startForeground(NOTIFICATION_ID, searchingNotification)
             }
         }, 3000)
@@ -259,7 +299,8 @@ class AdbPairingService : Service() {
     private fun stopService() {
         Log.d(TAG, "Stopping service by request...")
         isServiceStopping = true
-        stopDiscovery()
+        stopPairingDiscovery()
+        stopConnectDiscovery()
         stopServiceInternal()
     }
 
@@ -338,6 +379,15 @@ class AdbPairingService : Service() {
             .setProgress(0, 0, true)
             .build()
 
+    private val searchingConnectNotification: Notification
+        get() = Notification.Builder(this, NOTIFICATION_CHANNEL)
+            .setContentTitle("Mencari port koneksi...")
+            .setContentText("Tunggu sebentar, sedang mengaktifkan koneksi")
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setOngoing(true)
+            .setProgress(0, 0, true)
+            .build()
+
     private val workingNotification: Notification
         get() = Notification.Builder(this, NOTIFICATION_CHANNEL)
             .setContentTitle("Sedang Menghubungkan...")
@@ -350,7 +400,8 @@ class AdbPairingService : Service() {
     override fun onDestroy() {
         Log.d(TAG, "Service destroyed")
         isServiceStopping = true
-        stopDiscovery()
+        stopPairingDiscovery()
+        stopConnectDiscovery()
         super.onDestroy()
     }
 

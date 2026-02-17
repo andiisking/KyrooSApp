@@ -23,6 +23,9 @@ import frb.axeron.adb.AdbPairingService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.SocketTimeoutException
 
 class MainActivity : AppCompatActivity() {
     internal lateinit var webView: WebView
@@ -48,6 +51,8 @@ class MainActivity : AppCompatActivity() {
                                 null
                             )
                         }
+
+                        verifyStoredPort()
                     }
                 }
                 AdbPairingService.PAIRING_FAILED_ACTION -> {
@@ -92,6 +97,11 @@ class MainActivity : AppCompatActivity() {
 
         checkPermissions()
     }
+
+    override fun onResume() {
+        super.onResume()
+        verifyStoredPort()
+    }
     
     override fun onDestroy() {
         super.onDestroy()
@@ -99,7 +109,6 @@ class MainActivity : AppCompatActivity() {
             try {
                 unregisterReceiver(pairingReceiver)
             } catch (e: IllegalArgumentException) {
-                // Receiver sudah unregistered, ignore
             }
         }
     }
@@ -153,6 +162,46 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             Toast.makeText(this, "Menggunakan port tersimpan: $pairedPort", Toast.LENGTH_SHORT).show()
+            verifyStoredPort()
+        }
+    }
+
+    private fun verifyStoredPort() {
+        val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        val port = prefs.getInt("paired_port", -1)
+        if (port == -1) return
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val reachable = isPortReachable(port)
+            withContext(Dispatchers.Main) {
+                if (!reachable) {
+                    Log.w("MainActivity", "Stored port $port is not reachable, clearing and restarting pairing")
+                    prefs.edit().remove("paired_port").apply()
+                    Toast.makeText(this@MainActivity, 
+                        "Koneksi ADB terputus, memulai pairing ulang...", 
+                        Toast.LENGTH_LONG).show()
+                    startPairing() // ini akan memulai service karena port sudah -1
+                } else {
+                    Log.d("MainActivity", "Stored port $port is reachable")
+                }
+            }
+        }
+    }
+
+    /**
+     * Coba sambung ke localhost:port dengan timeout 2000ms.
+     * Jika berhasil (socket connected), anggap port aktif.
+     */
+    private suspend fun isPortReachable(port: Int, timeoutMs: Int = 2000): Boolean = withContext(Dispatchers.IO) {
+        return@withContext try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
+                true
+            }
+        } catch (e: SocketTimeoutException) {
+            false
+        } catch (e: Exception) {
+            false
         }
     }
 }
@@ -187,6 +236,12 @@ class KyroosAdbInterface(private val context: Context) {
             result
         } catch (e: Exception) {
             Log.e("KyroosAdb", "executeShell error: ${e.message}")
+            // Jika gagal karena koneksi, coba verifikasi port lagi
+            if (e.message?.contains("Connection refused") == true) {
+                (context as? MainActivity)?.runOnUiThread {
+                    (context as? MainActivity).verifyStoredPort()
+                }
+            }
             "Error: ${e.message}"
         }
     }
@@ -225,6 +280,12 @@ class KyroosAdbInterface(private val context: Context) {
                 client.close()
                 output
             } catch (e: Exception) {
+                // Jika gagal koneksi, beri sinyal ke UI untuk verifikasi ulang
+                if (e.message?.contains("Connection refused") == true) {
+                    withContext(Dispatchers.Main) {
+                        (context as? MainActivity)?.verifyStoredPort()
+                    }
+                }
                 "Error: ${e.message}"
             }
             
