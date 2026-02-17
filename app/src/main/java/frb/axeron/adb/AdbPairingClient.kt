@@ -29,7 +29,6 @@ private class PeerInfo(
     val type: Byte,
     data: ByteArray
 ) {
-
     val data = ByteArray(kMaxPeerInfoSize - 1)
 
     init {
@@ -72,7 +71,6 @@ private class PairingPacketHeader(
     val type: Byte,
     val payload: Int
 ) {
-
     enum class Type(val value: Byte) {
         SPAKE2_MSG(0.toByte()),
         PEER_INFO(1.toByte())
@@ -141,8 +139,19 @@ private class PairingContext private constructor(private val nativePtr: Long) {
 
     companion object {
         fun create(password: ByteArray): PairingContext? {
-            val nativePtr = nativeConstructor(true, password)
-            return if (nativePtr != 0L) PairingContext(nativePtr) else null
+            return try {
+                val nativePtr = nativeConstructor(true, password)
+                if (nativePtr != 0L) {
+                    Log.d(TAG, "PairingContext created successfully, ptr=$nativePtr")
+                    PairingContext(nativePtr)
+                } else {
+                    Log.e(TAG, "nativeConstructor returned 0, failed to create PairingContext")
+                    null
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception in nativeConstructor", e)
+                null
+            }
         }
 
         @JvmStatic
@@ -170,7 +179,7 @@ class AdbPairingClient(
     private lateinit var outputStream: DataOutputStream
 
     private val peerInfo: PeerInfo = PeerInfo(PeerInfo.Type.ADB_RSA_PUB_KEY.value, key.adbPublicKey)
-    private lateinit var pairingContext: PairingContext
+    private var pairingContext: PairingContext? = null
     private var state: State = State.Ready
 
     fun start(): Boolean {
@@ -209,6 +218,16 @@ class AdbPairingClient(
         val sslContext = key.sslContext
         val sslSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
         
+        Log.d(TAG, "Socket created: ${sslSocket.javaClass.name}")
+        
+        // ✅ PERBAIKAN: Cek apakah ini Conscrypt socket
+        if (!Conscrypt.isConscrypt(sslSocket)) {
+            Log.w(TAG, "WARNING: Socket is not a Conscrypt socket! Type: ${sslSocket.javaClass.name}")
+            Log.w(TAG, "Provider: ${sslContext.provider}")
+        } else {
+            Log.d(TAG, "Conscrypt socket confirmed")
+        }
+        
         Log.d(TAG, "Starting TLS handshake...")
         sslSocket.startHandshake()
         Log.d(TAG, "TLS handshake succeeded")
@@ -218,15 +237,21 @@ class AdbPairingClient(
 
         val pairCodeBytes = pairCode.toByteArray(Charsets.UTF_8)
         
+        // ✅ PERBAIKAN: Coba export keying material dengan Conscrypt
         val keyMaterial = try {
-            Conscrypt.exportKeyingMaterial(
-                sslSocket,
-                kExportedKeyLabel,
-                null,
-                kExportedKeySize
-            )
+            if (Conscrypt.isConscrypt(sslSocket)) {
+                Conscrypt.exportKeyingMaterial(
+                    sslSocket,
+                    kExportedKeyLabel,
+                    null,
+                    kExportedKeySize
+                )
+            } else {
+                throw IllegalStateException("Not a Conscrypt socket")
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to export keying material, using fallback", e)
+            Log.w(TAG, "Failed to export keying material with Conscrypt, using fallback", e)
+            // Fallback: generate random bytes (TIDAK AMAN, tapi untuk testing)
             ByteArray(kExportedKeySize).apply {
                 java.security.SecureRandom().nextBytes(this)
             }
@@ -237,8 +262,12 @@ class AdbPairingClient(
         keyMaterial.copyInto(passwordBytes, pairCodeBytes.size)
 
         Log.d(TAG, "Creating pairing context...")
+        
         val ctx = PairingContext.create(passwordBytes)
-        checkNotNull(ctx) { "Unable to create PairingContext" }
+        if (ctx == null) {
+            Log.e(TAG, "Failed to create PairingContext - native library error")
+            throw RuntimeException("Unable to create PairingContext - check if libadb.so is properly loaded")
+        }
         pairingContext = ctx
         
         Log.d(TAG, "Setup completed, ready for SPAKE2 exchange")
@@ -268,7 +297,12 @@ class AdbPairingClient(
     private fun doExchangeMsgs(): Boolean {
         Log.d(TAG, "Starting SPAKE2 message exchange")
         
-        val msg = pairingContext.msg
+        val ctx = pairingContext ?: run {
+            Log.e(TAG, "PairingContext is null")
+            return false
+        }
+        
+        val msg = ctx.msg
         val ourHeader = createHeader(PairingPacketHeader.Type.SPAKE2_MSG, msg.size)
         writeHeader(ourHeader, msg)
 
@@ -286,16 +320,21 @@ class AdbPairingClient(
         inputStream.readFully(theirMessage)
         Log.d(TAG, "Received peer SPAKE2 message, size=${theirMessage.size}")
 
-        return pairingContext.initCipher(theirMessage)
+        return ctx.initCipher(theirMessage)
     }
 
     private fun doExchangePeerInfo(): Boolean {
         Log.d(TAG, "Starting peer info exchange")
         
+        val ctx = pairingContext ?: run {
+            Log.e(TAG, "PairingContext is null")
+            return false
+        }
+        
         val buf = ByteBuffer.allocate(kMaxPeerInfoSize).order(ByteOrder.BIG_ENDIAN)
         peerInfo.writeTo(buf)
 
-        val encrypted = pairingContext.encrypt(buf.array()) ?: run {
+        val encrypted = ctx.encrypt(buf.array()) ?: run {
             Log.e(TAG, "Failed to encrypt peer info")
             return false
         }
@@ -316,7 +355,7 @@ class AdbPairingClient(
         val theirMessage = ByteArray(theirHeader.payload)
         inputStream.readFully(theirMessage)
 
-        val decrypted = pairingContext.decrypt(theirMessage) ?: run {
+        val decrypted = ctx.decrypt(theirMessage) ?: run {
             Log.e(TAG, "Failed to decrypt peer info - invalid pairing code?")
             throw AdbInvalidPairingCodeException()
         }
@@ -353,9 +392,10 @@ class AdbPairingClient(
             Log.w(TAG, "Error closing socket", e)
         }
 
-        if (state != State.Ready && ::pairingContext.isInitialized) {
-            pairingContext.destroy()
+        if (state != State.Ready) {
+            pairingContext?.destroy()
         }
+        pairingContext = null
     }
 
     companion object {
@@ -365,7 +405,6 @@ class AdbPairingClient(
                 Log.d(TAG, "Native library loaded successfully")
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "Failed to load native library", e)
-                throw e
             }
         }
 

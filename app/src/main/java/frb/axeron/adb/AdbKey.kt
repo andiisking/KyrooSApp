@@ -11,6 +11,7 @@ import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
 import org.bouncycastle.cert.X509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import org.conscrypt.Conscrypt  // ✅ TAMBAH INI
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.net.Socket
@@ -36,6 +37,22 @@ class AdbKey(private val context: Context, private val name: String) {
     companion object {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ENCRYPTION_KEY_ALIAS = "_kyroos_adb_enc_"
+        
+        // ✅ BARU: Install Conscrypt sebagai provider pertama
+        init {
+            try {
+                // Hapus Conscrypt jika sudah ada
+                val existingProvider = Security.getProvider(Conscrypt.PROVIDER_NAME)
+                if (existingProvider != null) {
+                    Security.removeProvider(Conscrypt.PROVIDER_NAME)
+                }
+                // Install Conscrypt sebagai provider pertama (prioritas tertinggi)
+                Security.insertProviderAt(Conscrypt.newProviderBuilder().provideTrustManager(true).build(), 1)
+                Log.d(TAG, "Conscrypt provider installed successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to install Conscrypt provider", e)
+            }
+        }
         
         private val PADDING = byteArrayOf(
             0x00, 0x01, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -164,8 +181,10 @@ class AdbKey(private val context: Context, private val name: String) {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun createSslContext(): SSLContext {
-        val ctx = SSLContext.getInstance("TLSv1.3")
+        // ✅ PERBAIKAN: Gunakan "TLSv1.3" dengan Conscrypt provider
+        val ctx = SSLContext.getInstance("TLSv1.3", Conscrypt.PROVIDER_NAME)
         ctx.init(arrayOf(keyManager), arrayOf(trustManager), SecureRandom())
+        Log.d(TAG, "SSLContext created with Conscrypt provider")
         return ctx
     }
 
