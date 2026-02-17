@@ -89,27 +89,24 @@ class AdbPairingService : Service() {
         return searchingNotification
     }
 
-    private fun onInput(code: String, port: Int): Notification {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // Menggunakan AdbKey versi KyrooS (Context, Name)
-                val adbKey = AdbKey(this@AdbPairingService, "kyroos_device")
-                
-                // Menggunakan AdbPairingClient versi KyrooS
-                val pairingClient = AdbPairingClient(this@AdbPairingService, "127.0.0.1", port)
-                
-                if (pairingClient.pair(code)) {
-                    handleResult(true, null)
-                } else {
-                    handleResult(false, Exception("Pairing code salah"))
-                }
-                pairingClient.close()
-            } catch (e: Exception) {
-                handleResult(false, e)
+    private fun onInput(code: String, port: Int) {
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val adbKey = AdbKey(this@AdbPairingService, "kyroos_device")
+            // Sesuaikan dengan constructor: AdbPairingClient(host, port, code, key)
+            val pairingClient = AdbPairingClient("127.0.0.1", port, code, adbKey)
+            
+            if (pairingClient.start()) {
+                handleResult(true, null)
+            } else {
+                handleResult(false, Exception("Pairing failed"))
             }
+        } catch (e: Exception) {
+            handleResult(false, e)
         }
-        return workingNotification
     }
+}
+
 
     private fun handleResult(success: Boolean, exception: Throwable?) {
         val nm = getSystemService(NotificationManager::class.java)

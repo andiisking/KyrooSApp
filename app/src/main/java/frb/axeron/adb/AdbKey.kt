@@ -95,10 +95,11 @@ class AdbKey(private val context: Context, private val name: String) {
     fun getPublicKeyString(): String {
         return Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP) + " $name"
     }
-
-    val adbPublicKey: ByteArray by lazy {
-        publicKey.adbEncoded(name)
-    }
+    
+    // Ganti blok adbPublicKey yang error dengan ini:
+     val adbPublicKey: ByteArray by lazy {
+     publicKey.adbEncoded(name) 
+     }
 
     private fun getOrCreateEncryptionKey(): Key? {
         val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -168,4 +169,41 @@ class PreferenceAdbKeyStore(private val preference: SharedPreferences) {
         val data = preference.getString("adbkey", null) ?: return null
         return Base64.decode(data, Base64.NO_WRAP)
     }
+}
+
+private const val ANDROID_PUBKEY_MODULUS_SIZE = 2048 / 8
+private const val ANDROID_PUBKEY_MODULUS_SIZE_WORDS = ANDROID_PUBKEY_MODULUS_SIZE / 4
+private const val RSAPublicKey_Size = 524
+
+private fun BigInteger.toAdbEncoded(): IntArray {
+    val encoded = IntArray(ANDROID_PUBKEY_MODULUS_SIZE_WORDS)
+    val r32 = BigInteger.ZERO.setBit(32)
+    var tmp = this.add(BigInteger.ZERO)
+    for (i in 0 until ANDROID_PUBKEY_MODULUS_SIZE_WORDS) {
+        val out = tmp.divideAndRemainder(r32)
+        tmp = out[0]
+        encoded[i] = out[1].toInt()
+    }
+    return encoded
+}
+
+fun RSAPublicKey.adbEncoded(name: String): ByteArray {
+    val r32 = BigInteger.ZERO.setBit(32)
+    val n0inv = modulus.remainder(r32).modInverse(r32).negate()
+    val r = BigInteger.ZERO.setBit(ANDROID_PUBKEY_MODULUS_SIZE * 8)
+    val rr = r.modPow(BigInteger.valueOf(2), modulus)
+
+    val buffer = ByteBuffer.allocate(RSAPublicKey_Size).order(ByteOrder.LITTLE_ENDIAN)
+    buffer.putInt(ANDROID_PUBKEY_MODULUS_SIZE_WORDS)
+    buffer.putInt(n0inv.toInt())
+    modulus.toAdbEncoded().forEach { buffer.putInt(it) }
+    rr.toAdbEncoded().forEach { buffer.putInt(it) }
+    buffer.putInt(publicExponent.toInt())
+
+    val base64Bytes = Base64.encode(buffer.array(), Base64.NO_WRAP)
+    val nameBytes = " $name\u0000".toByteArray()
+    val bytes = ByteArray(base64Bytes.size + nameBytes.size)
+    base64Bytes.copyInto(bytes)
+    nameBytes.copyInto(bytes, base64Bytes.size)
+    return bytes
 }
