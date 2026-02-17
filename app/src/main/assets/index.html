@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kyroos Module</title>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400..700,1,0" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js"></script>
+</head>
+<body>
+
+    <header class="top-app-bar" id="mainHeader">
+        <div class="header-branding">
+            <span class="material-symbols-rounded app-logo">forest</span>
+            <div class="app-title">KyrooS</div>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <section id="home" class="tab-section active">
+            <div class="card status-hero" id="statusCard">
+                <div class="status-header">
+                    <span class="material-symbols-rounded status-icon" id="statusIcon">hourglass_empty</span>
+                    <div class="status-text">
+                        <h2 id="statusTitle">Checking...</h2>
+                        <p id="statusDesc">Verifying service status</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">extension</span></div><div class="info-content"><h3>Module Version</h3><p>8.0</p></div></div>
+                <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">developer_board</span></div><div class="info-content"><h3>SoC Platform</h3><p id="chipsetInfo">Scanning...</p></div></div>
+                <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">memory</span></div><div class="info-content"><h3>RAM Capacity</h3><p id="ramInfo">Calculating...</p></div></div>
+                <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">terminal</span></div><div class="info-content"><h3>Kernel</h3><p id="kernelInfo" style="font-size: 14px;">Checking...</p></div></div>
+            </div>
+        </section>
+
+        <section id="apps" class="tab-section">
+            <div id="appInitState" class="empty-state">
+                <span class="material-symbols-rounded" style="font-size: 48px; opacity: 0.5;">apps</span>
+                <div style="opacity: 0.8; margin-bottom: 8px;">Click scan to load installed apps</div>
+                <button class="btn-scan" onclick="startAppScan()">
+                    <span class="material-symbols-rounded">refresh</span> Scan Apps
+                </button>
+            </div>
+
+            <input type="text" id="appSearch" class="search-box" placeholder="Search apps..." oninput="debouncedFilter(this.value)">
+            
+            <div id="app-list-target" class="app-list-container"></div>
+            <div id="app-count-info" style="text-align: center; font-size: 12px; opacity: 0.5; margin-top: 10px; display: none;"></div>
+        </section>
+
+        <section id="settings" class="tab-section">
+            <div class="card">
+                <div class="settings-item">
+                    <div class="settings-left"><span class="material-symbols-rounded settings-icon">rocket_launch</span><div class="settings-text"><h3>Sigma Service</h3><p>Main module binary</p></div></div>
+                    <label class="switch"><input type="checkbox" id="sigmaSwitch" onchange="toggleSigma(this)"><span class="slider"></span></label>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="settings-item">
+                    <div class="settings-left"><span class="material-symbols-rounded settings-icon">apps</span><div class="settings-text"><h3>Advanced App Config</h3><p>Enable App Manager</p></div></div>
+                    <label class="switch"><input type="checkbox" id="appConfigSwitch" onchange="toggleAppConfig(this)"><span class="slider"></span></label>
+                </div>
+            </div>
+            
+            <div class="card clickable-item" onclick="openTweakPage()">
+                <div class="settings-item">
+                    <div class="settings-left">
+                        <span class="material-symbols-rounded settings-icon">build</span>
+                        <div class="settings-text"><h3>Additional Tweaks</h3><p>Advanced Optimization</p></div>
+                    </div>
+                    <span class="material-symbols-rounded" style="color: var(--md-outline);">arrow_forward_ios</span>
+                </div>
+            </div>
+
+            <div class="card clickable-item" onclick="openConfigPage()">
+                <div class="settings-item">
+                    <div class="settings-left"><span class="material-symbols-rounded settings-icon">tune</span><div class="settings-text"><h3>Sigma Configuration</h3><p>Behavior & power tweaks</p></div></div>
+                    <span class="material-symbols-rounded" style="color: var(--md-outline);">arrow_forward_ios</span>
+                </div>
+            </div>
+
+            <div class="card clickable-item" onclick="openDevModal()">
+                <div class="settings-item">
+                    <div class="settings-left"><span class="material-symbols-rounded settings-icon">code</span><div class="settings-text"><h3>Developer</h3><p>@koneko_dev</p></div></div>
+                    <span class="material-symbols-rounded" style="color: var(--md-outline);">open_in_new</span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="configPage" class="sub-page">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeConfigPage()"><span class="material-symbols-rounded">arrow_back</span></button>
+            <span style="font-size: 20px; font-weight: 500;">Configuration</span>
+        </div>
+        <div class="main-content" style="padding-top: 0; margin-top: 0;">
+            <div style="height: 12px;"></div>
+            <div class="config-card">
+                <div class="settings-left"><span class="material-symbols-rounded settings-icon">bedtime</span><div class="settings-text"><h3>Force Deepsleep</h3><p>When screen is off</p></div></div>
+                <label class="switch"><input type="checkbox" id="deepSwitch" onchange="saveKyroosConfig()"><span class="slider"></span></label>
+            </div>
+            <div class="config-card" id="autoPowerCard">
+                <div class="settings-left"><span class="material-symbols-rounded settings-icon">battery_saver</span><div class="settings-text"><h3>Auto Powersave</h3><p>Automatic power efficiency</p></div></div>
+                <label class="switch"><input type="checkbox" id="powerSwitch" onchange="handleAutoToggle(this)"><span class="slider"></span></label>
+            </div>
+            <div class="config-card-expandable" id="customPowerCard">
+                <div class="config-header">
+                    <div class="settings-left">
+                        <span class="material-symbols-rounded settings-icon">electric_bolt</span>
+                        <div class="settings-text"><h3>Custom Powersave</h3><p>Manual trigger level</p></div>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="customSaveSwitch" onchange="handleCustomToggle(this)"><span class="slider"></span></label>
+                </div>
+                <div id="customSaveContainer" class="expand-content">
+                    <div class="md-input-group">
+                        <input type="number" id="customSaveValue" class="md-input" placeholder="Battery Level (0-100)" min="0" max="100">
+                        <button class="btn-icon-apply" onclick="applyCustomSave()"><span class="material-symbols-rounded" style="font-size: 20px;">save</span></button>
+                    </div>
+                </div>
+            </div>
+            <div class="config-card">
+                <div class="settings-left"><span class="material-symbols-rounded settings-icon">cleaning_services</span><div class="settings-text"><h3>Auto Clear Cache (Root)</h3><p>Background cleaning</p></div></div>
+                <label class="switch"><input type="checkbox" id="cacheSwitch" onchange="saveKyroosConfig()"><span class="slider"></span></label>
+            </div>
+            <p style="text-align:center; color:var(--md-outline); margin-top:24px; font-size:13px; opacity: 0.6;">Changes are applied instantly</p>
+        </div>
+    </div>
+
+    <div id="tweakPage" class="sub-page">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeTweakPage()"><span class="material-symbols-rounded">arrow_back</span></button>
+            <span style="font-size: 20px; font-weight: 500;">Additional Tweaks</span>
+        </div>
+        <div class="main-content" style="padding-top: 0; margin-top: 0;">
+            <div style="height: 12px;"></div>
+            
+            <div class="config-card">
+                <div class="settings-left">
+                    <span class="material-symbols-rounded settings-icon">security</span>
+                    <div class="settings-text"><h3>Brutal Appops</h3><p>Aggressive background restriction (Per-App)</p></div>
+                </div>
+                <label class="switch"><input type="checkbox" id="brutalSwitch" onchange="handleBrutalToggle(this)"><span class="slider"></span></label>
+            </div>
+
+            <div class="config-card-expandable" id="resCard">
+                <div class="config-header">
+                    <div class="settings-left">
+                        <span class="material-symbols-rounded settings-icon">aspect_ratio</span>
+                        <div class="settings-text"><h3>Custom Resolution</h3><p>Modify screen size</p></div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="resSwitch" onchange="toggleResUI(this)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="resContainer" class="expand-content">
+                    
+                    <div class="md-input-group">
+                        <input type="number" id="resW" class="md-input" placeholder="Width">
+                    </div>
+
+                    <div class="md-input-group">
+                        <input type="number" id="resH" class="md-input" placeholder="Height">
+                    </div>
+
+                    <button class="btn-apply" onclick="applyResolution()">
+                        <span class="material-symbols-rounded">check_circle</span>
+                        Apply Resolution
+                    </button>
+
+                    <button class="btn-reset" onclick="resetResolution()">
+                        <span class="material-symbols-rounded">restart_alt</span>
+                        Reset to Default
+                    </button>
+                </div>
+            </div>
+
+             <p style="text-align:center; color:var(--md-outline); margin-top:24px; font-size:13px; opacity: 0.6;">More tweaks coming soon.</p>
+        </div>
+    </div>
+
+    <div id="appDetailPage" class="sub-page">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeAppDetail()"><span class="material-symbols-rounded">arrow_back</span></button>
+            <span style="font-size: 20px; font-weight: 500;">App Settings</span>
+        </div>
+        <div class="main-content" style="padding-top: 0; margin-top: 0;">
+            <div class="app-detail-hero">
+                <div class="detail-icon-box">
+                    <span class="material-symbols-rounded">android</span>
+                </div>
+                <h2 id="detailAppLabel" class="detail-label">App Name</h2>
+                <p id="detailAppPkg" class="detail-pkg">com.package.name</p>
+            </div>
+            
+            <div class="section-title">Graphics Driver</div>
+
+            <div class="config-card">
+                <div class="settings-left">
+                    <span class="material-symbols-rounded settings-icon">3d_rotation</span>
+                    <div class="settings-text"><h3>Angle Driver</h3><p>Force OpenGL ES (ANGLE)</p></div>
+                </div>
+                <label class="switch"><input type="checkbox" id="angleSwitch" onchange="handleDriverToggle('angle')"><span class="slider"></span></label>
+            </div>
+
+            <div class="config-card">
+                <div class="settings-left">
+                    <span class="material-symbols-rounded settings-icon">sports_esports</span>
+                    <div class="settings-text"><h3>Game Driver</h3><p>Use Game Driver Overlay</p></div>
+                </div>
+                <label class="switch"><input type="checkbox" id="gameSwitch" onchange="handleDriverToggle('game')"><span class="slider"></span></label>
+            </div>
+
+            <div class="config-card">
+                <div class="settings-left">
+                    <span class="material-symbols-rounded settings-icon">architecture</span>
+                    <div class="settings-text"><h3>Developer Driver</h3><p>Use Prerelease Driver</p></div>
+                </div>
+                <label class="switch"><input type="checkbox" id="devSwitch" onchange="handleDriverToggle('dev')"><span class="slider"></span></label>
+            </div>
+
+            <div class="section-title">Power Management</div>
+
+            <div class="config-card">
+                <div class="settings-left">
+                    <span class="material-symbols-rounded settings-icon">battery_alert</span>
+                    <div class="settings-text"><h3>Battery Whitelist</h3><p>Add to Device Idle Whitelist</p></div>
+                </div>
+                <label class="switch"><input type="checkbox" id="whitelistSwitch" onchange="handleWhitelistToggle(this)"><span class="slider"></span></label>
+            </div>
+
+            <p style="text-align:center; color:var(--md-outline); margin-top:24px; font-size:13px; opacity: 0.6;">Requires app restart</p>
+        </div>
+    </div>
+
+    <div id="opapsPage" class="sub-page">
+        <div class="sub-header">
+            <button class="back-btn" onclick="closeOpapsPage()"><span class="material-symbols-rounded">arrow_back</span></button>
+            <span style="font-size: 20px; font-weight: 500;">Select App (Opaps)</span>
+        </div>
+        <div class="main-content" style="padding-top: 0; margin-top: 0;">
+            <div style="height: 12px;"></div>
+            
+            <div id="opapsInitState" class="empty-state">
+                <span class="material-symbols-rounded" style="font-size: 48px; opacity: 0.5;">security</span>
+                <div style="opacity: 0.8; margin-bottom: 8px;">Load user apps for Opaps</div>
+                <button class="btn-scan" onclick="startOpapsScan()">
+                    <span class="material-symbols-rounded">refresh</span> Load User Apps
+                </button>
+            </div>
+
+            <input type="text" id="opapsSearch" class="search-box" placeholder="Search user apps..." oninput="debouncedOpapsFilter(this.value)">
+            
+            <div id="opaps-list-target" class="app-list-container"></div>
+            <div id="opaps-count-info" style="text-align: center; font-size: 12px; opacity: 0.5; margin-top: 10px; display: none;"></div>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal-box">
+            <span class="material-symbols-rounded" style="font-size:48px; color: var(--md-primary); margin-bottom: 16px;">warning</span>
+            <h3 style="font-size: 20px; margin-bottom: 8px;">Are you sure?</h3>
+            <p style="opacity: 0.8; font-size: 14px;">Running brutal appops may affect background notifications.</p>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="cancelBrutalAction()">Cancel</button>
+                <button class="modal-btn confirm" onclick="confirmBrutalAction()">Run</button>
+            </div>
+        </div>
+    </div>
+
+        <div id="opapsConfirmModal" class="modal-overlay">
+        <div class="modal-box">
+            <div style="background-color: var(--md-primary-container); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
+                <span class="material-symbols-rounded" style="font-size:32px; color: var(--md-on-primary-container);">shield_lock</span>
+            </div>
+            
+            <h3 style="font-size: 20px; margin-bottom: 8px;">Apply Opaps?</h3>
+            <p style="opacity: 0.8; font-size: 14px; margin-bottom: 12px;">Restrict background activity for:</p>
+            
+            <div class="pkg-chip">
+                <span class="material-symbols-rounded" style="font-size: 18px; color: var(--md-primary);">android</span>
+                <span id="opapsTargetPkg">com.package.name</span>
+            </div>
+            
+            <div class="modal-actions" style="margin-top: 24px;">
+                <button class="modal-btn cancel" onclick="closeOpapsConfirm()">Cancel</button>
+                <button class="modal-btn confirm" onclick="runOpapsConfirmed()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="devModal" class="modal-overlay">
+        <div class="modal-box profile-box">
+            <img id="devProfileImg" class="profile-img" src="profile.png">
+            
+            <h3 style="font-size: 22px; margin-bottom: 2px;">KonekoDev</h3>
+            <p style="color: var(--md-outline); font-size: 14px;">Android Module Developer</p>
+            
+            <div class="profile-actions">
+                <button class="btn-profile btn-telegram" onclick="openTgLink('https://t.me/Koneko_dev')">
+                    <span class="material-symbols-rounded" style="font-size:18px">send</span> Telegram
+                </button>
+                <button class="btn-profile btn-channel" onclick="openTgLink('https://t.me/Droid_ch')">
+                    <span class="material-symbols-rounded" style="font-size:18px">campaign</span> Channel
+                </button>
+            </div>
+
+            <button class="modal-btn cancel" onclick="closeDevModal()" style="margin-top: 12px; width:100%">Close</button>
+        </div>
+    </div>
+
+    <nav class="nav-container" id="mainNav">
+        <div class="nav-item active" id="nav-home" onclick="switchTab('home')"><div class="nav-pill"><span class="material-symbols-rounded">home</span></div><span class="nav-label">Home</span></div>
+        <div class="nav-item hidden-tab" id="nav-apps" onclick="switchTab('apps')"><div class="nav-pill"><span class="material-symbols-rounded">apps</span></div><span class="nav-label">Apps</span></div>
+        <div class="nav-item" id="nav-settings" onclick="switchTab('settings')"><div class="nav-pill"><span class="material-symbols-rounded">settings</span></div><span class="nav-label">Config</span></div>
+    </nav>
+</body>
+</html>
