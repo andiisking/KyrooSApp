@@ -16,6 +16,8 @@ import androidx.core.content.ContextCompat
 import frb.axeron.adb.AdbClient
 import frb.axeron.adb.AdbKey
 import frb.axeron.adb.AdbPairingService
+
+// PASTIIN CUMA IMPORT INI, JANGAN ADA 'import android.R'
 import com.kyroos.app.R 
 
 class MainActivity : AppCompatActivity() {
@@ -23,9 +25,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // PASTIIN PAKAI R.layout
         setContentView(R.layout.activity_main)
 
+        // PASTIIN PAKAI R.id
         webView = findViewById(R.id.webView)
+        
         val webSettings: WebSettings = webView.settings
         webSettings.javaScriptEnabled = true
         webSettings.domStorageEnabled = true
