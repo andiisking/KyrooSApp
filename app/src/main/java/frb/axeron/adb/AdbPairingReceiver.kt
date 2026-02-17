@@ -14,26 +14,28 @@ class AdbPairingReceiver : BroadcastReceiver() {
 
         if (results != null && port != -1) {
             val code = results.getCharSequence("pairing_code").toString()
-            val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
             
-            // Menggunakan PairingClient asli Axeron (Membutuhkan libadb.so)
+            // Constructor Asli Axeron: (Context, Host, Port)
             val pairingClient = AdbPairingClient(context, host, port)
             
             try {
-                // Proses Pairing Native Spake2
-                val success = pairingClient.pair(code)
-                if (success) {
+                // Metode pair asli Axeron hanya butuh satu parameter (pairingCode)
+                if (pairingClient.pair(code)) {
+                    val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
                     prefs.edit().putInt("paired_port", port).apply()
-                    Toast.makeText(context, "Pairing Berhasil!", Toast.LENGTH_SHORT).show()
                     
-                    // Beritahu service agar menghentikan scan
-                    val serviceIntent = Intent(context, AdbPairingService::class.java).apply { action = "stop" }
-                    context.startService(serviceIntent)
+                    Toast.makeText(context, "KyrooS Berhasil Terhubung!", Toast.LENGTH_SHORT).show()
+                    
+                    // Beritahu service untuk berhenti scan
+                    context.startService(Intent(context, AdbPairingService::class.java).apply {
+                        action = "stop"
+                    })
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Pairing Gagal: ${e.message}", Toast.LENGTH_LONG).show()
             } finally {
-                pairingClient.close()
+                // AdbPairingClient Axeron mengimplementasikan Closeable
+                try { pairingClient.close() } catch (e: Exception) {}
             }
         }
     }
