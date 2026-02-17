@@ -37,7 +37,6 @@ class AdbKey(private val context: Context, private val name: String) {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ENCRYPTION_KEY_ALIAS = "_kyroos_adb_enc_"
         
-        // Padding standar untuk tanda tangan RSA ADB
         private val PADDING = byteArrayOf(
             0x00, 0x01, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
             -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -76,7 +75,6 @@ class AdbKey(private val context: Context, private val name: String) {
             RSAPublicKeySpec(privateKey.modulus, RSAKeyGenParameterSpec.F4)
         ) as RSAPublicKey
 
-        // Membuat sertifikat digital KyrooS
         val signer = JcaContentSignerBuilder("SHA256withRSA").build(privateKey)
         val certBuilder = X509v3CertificateBuilder(
             X500Name("CN=KyrooS"), 
@@ -128,7 +126,6 @@ class AdbKey(private val context: Context, private val name: String) {
                 return KeyFactory.getInstance("RSA")
                     .generatePrivate(PKCS8EncodedKeySpec(data)) as RSAPrivateKey
             } catch (e: Exception) {
-                // Ignore, generate new key
             }
         }
         val gen = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA)
@@ -146,7 +143,6 @@ class AdbKey(private val context: Context, private val name: String) {
         return cipher.doFinal(data)
     }
 
-    // FIX: Explicit type declaration untuk menghindari recursive problem
     @Volatile
     private var sslContextInstance: SSLContext? = null
 

@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.RemoteInput
 import android.app.Service
-import android.app.ServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -97,7 +96,11 @@ class AdbPairingService : Service() {
             
             STOP_ACTION -> {
                 Log.d(TAG, "Stopping service")
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    stopForeground(true)
+                }
                 stopSelf()
                 null
             }
@@ -106,16 +109,7 @@ class AdbPairingService : Service() {
         }
 
         notification?.let {
-            // FIX: Import ServiceInfo sudah ditambahkan di atas
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID, 
-                    it, 
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, it)
-            }
+            startForeground(NOTIFICATION_ID, it)
         }
         
         return START_STICKY

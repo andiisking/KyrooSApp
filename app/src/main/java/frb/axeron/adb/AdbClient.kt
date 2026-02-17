@@ -41,22 +41,23 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
     private val outputStream get() = if (useTls) tlsOutputStream else plainOutputStream
 
     fun connect() {
-        val socket = Socket()
+        val newSocket = Socket()
         val address = InetSocketAddress(host, port)
-        socket.connect(address, 5000)
+        newSocket.connect(address, 5000)
 
-        socket.tcpNoDelay = true
-        plainInputStream = DataInputStream(socket.getInputStream())
-        plainOutputStream = DataOutputStream(socket.getOutputStream())
+        newSocket.tcpNoDelay = true
+        this.socket = newSocket
+        plainInputStream = DataInputStream(newSocket.getInputStream())
+        plainOutputStream = DataOutputStream(newSocket.getOutputStream())
 
-        write(A_CNXN, A_VERSION, A_MAXDATA, "host::")
+        write(A_CNXN, A_VERSION, A_MAXDATA, "host::".toByteArray(Charsets.UTF_8))
 
         var message = read()
         if (message.command == A_STLS) {
             if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
                 error("Connect to adb with TLS is not supported before Android 10")
             }
-            write(A_STLS, A_STLS_VERSION, 0)
+            write(A_STLS, A_STLS_VERSION, 0, null)
 
             val sslContext = key.sslContext
             tlsSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
@@ -69,7 +70,8 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
 
             message = read()
         } else if (message.command == A_AUTH) {
-            if (message.command != A_AUTH && message.arg0 != ADB_AUTH_TOKEN) error("not A_AUTH ADB_AUTH_TOKEN")
+            if (message.arg0 != ADB_AUTH_TOKEN) error("not A_AUTH ADB_AUTH_TOKEN")
+            
             write(A_AUTH, ADB_AUTH_SIGNATURE, 0, key.sign(message.data))
 
             message = read()
@@ -82,12 +84,9 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
         if (message.command != A_CNXN) error("not A_CNXN")
     }
 
-    /**
-     * Buka stream ke destination (service ADB)
-     */
     fun open(destination: String): AdbStream {
         val localId = generateLocalId()
-        write(A_OPEN, localId, 0, destination)
+        write(A_OPEN, localId, 0, destination.toByteArray(Charsets.UTF_8))
         
         val message = read()
         if (message.command != A_OKAY) {
@@ -98,19 +97,13 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
         return AdbStream(this, localId, remoteId)
     }
 
-    /**
-     * Jalankan shell command
-     */
     fun shellCommand(cmd: String, listener: ((ByteArray) -> Unit)? = null) {
         command("shell:$cmd", listener)
     }
 
-    /**
-     * Jalankan command ADB
-     */
     fun command(cmd: String, listener: ((ByteArray) -> Unit)? = null) {
         val localId = 1
-        write(A_OPEN, localId, 0, cmd)
+        write(A_OPEN, localId, 0, cmd.toByteArray(Charsets.UTF_8))
 
         var message = read()
         when (message.command) {
@@ -122,9 +115,9 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
                         if (message.data_length > 0) {
                             listener?.invoke(message.data!!)
                         }
-                        write(A_OKAY, localId, remoteId)
+                        write(A_OKAY, localId, remoteId, null)
                     } else if (message.command == A_CLSE) {
-                        write(A_CLSE, localId, remoteId)
+                        write(A_CLSE, localId, remoteId, null)
                         break
                     } else {
                         error("Unexpected command: ${message.command}")
@@ -133,7 +126,7 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
             }
             A_CLSE -> {
                 val remoteId = message.arg0
-                write(A_CLSE, localId, remoteId)
+                write(A_CLSE, localId, remoteId, null)
             }
             else -> {
                 error("Unexpected response: ${message.command}")
@@ -141,9 +134,6 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
         }
     }
 
-    /**
-     * Write message ke ADB server
-     */
     internal fun write(command: Int, arg0: Int, arg1: Int, data: ByteArray? = null) {
         write(AdbMessage(command, arg0, arg1, data))
     }
@@ -154,9 +144,6 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
         Log.d(TAG, "write ${message.toStringShort()}")
     }
 
-    /**
-     * Read message dari ADB server
-     */
     internal fun read(): AdbMessage {
         val buffer = ByteBuffer.allocate(AdbMessage.HEADER_LENGTH).order(ByteOrder.LITTLE_ENDIAN)
         inputStream.readFully(buffer.array(), 0, 24)
@@ -179,7 +166,7 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
     }
 
     private fun generateLocalId(): Int {
-        return (1..Int.MAX_VALUE).random()
+        return (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
     }
 
     override fun close() {
@@ -195,9 +182,6 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
     }
 }
 
-/**
- * Stream ADB untuk komunikasi two-way
- */
 class AdbStream(
     private val client: AdbClient,
     private val localId: Int,
@@ -205,25 +189,39 @@ class AdbStream(
 ) : Closeable {
     
     private var closed = false
-    private val readBuffer = mutableListOf<ByteArray>()
-    private var writeBuffer = ByteArray(0)
 
-    /**
-     * Baca data dari stream (blocking)
-     */
+    fun readAll(): ByteArray {
+        val result = mutableListOf<ByteArray>()
+        
+        while (!closed) {
+            val chunk = read() ?: break
+            result.add(chunk)
+        }
+        
+        val totalSize = result.sumOf { it.size }
+        val output = ByteArray(totalSize)
+        var offset = 0
+        for (chunk in result) {
+            chunk.copyInto(output, offset)
+            offset += chunk.size
+        }
+        
+        return output
+    }
+
     fun read(): ByteArray? {
         if (closed) return null
         
         while (true) {
             val message = client.read()
             when (message.command) {
-                AdbProtocol.A_WRTE -> {
+                A_WRTE -> {
                     if (message.arg0 == localId) {
-                        client.write(AdbProtocol.A_OKAY, localId, remoteId)
+                        client.write(A_OKAY, localId, remoteId, null)
                         return message.data
                     }
                 }
-                AdbProtocol.A_CLSE -> {
+                A_CLSE -> {
                     close()
                     return null
                 }
@@ -231,23 +229,21 @@ class AdbStream(
         }
     }
 
-    /**
-     * Tulis data ke stream
-     */
     fun write(data: ByteArray) {
         if (closed) throw IllegalStateException("Stream closed")
         
         var offset = 0
         while (offset < data.size) {
-            val chunk = data.copyOfRange(offset, minOf(offset + AdbProtocol.A_MAXDATA, data.size))
-            client.write(AdbProtocol.A_WRTE, localId, remoteId, chunk)
+            val chunkSize = minOf(A_MAXDATA, data.size - offset)
+            val chunk = data.copyOfRange(offset, offset + chunkSize)
             
-            // Tunggu OKAY
+            client.write(A_WRTE, localId, remoteId, chunk)
+            
             val response = client.read()
-            if (response.command != AdbProtocol.A_OKAY) {
+            if (response.command != A_OKAY) {
                 throw AdbException("Write failed: ${response.command}")
             }
-            offset += chunk.size
+            offset += chunkSize
         }
     }
 
@@ -255,7 +251,7 @@ class AdbStream(
         if (!closed) {
             closed = true
             try {
-                client.write(AdbProtocol.A_CLSE, localId, remoteId)
+                client.write(A_CLSE, localId, remoteId, null)
             } catch (_: Exception) {}
         }
     }
