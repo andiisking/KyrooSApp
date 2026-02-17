@@ -14,11 +14,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             var paired by remember { mutableStateOf(prefs.getBoolean("paired", false)) }
             if (paired) {
+                LaunchedEffect(Unit) { AdbManager.connect(this@MainActivity) }
                 KyroosDashboard()
             } else {
-                SetupScreen {
-                    AdbManager.startPairingService(this@MainActivity)
-                }
+                SetupScreen { AdbManager.startPairingService(this@MainActivity) }
             }
         }
     }
