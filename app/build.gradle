@@ -25,14 +25,28 @@ android {
 }
 
 dependencies {
-    // Tambahkan ini untuk memperbaiki error 'rikka' dan 'BuildUtils'
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    
+    // WAJIB: Agar tema @style/Theme.AppCompat... dan MaterialComponents tidak error
+    implementation 'com.google.android.material:material:1.10.0'
+    
+    // WAJIB: Untuk RikkaX (BuildUtils & core)
     implementation 'dev.rikka.rikkax.core:core:1.4.1'
     implementation 'dev.rikka.rikkax.appcompat:appcompat:1.6.1'
     
-    // Pastikan library ini juga ada
+    // WAJIB: Untuk AdbPairingService (Observer & Lifecycle)
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.6.2'
+    
+    // WAJIB: Untuk AdbKey & AdbPairingClient (Enkripsi)
     implementation 'org.conscrypt:conscrypt-android:2.5.2'
     implementation 'org.bouncycastle:bcprov-jdk15to18:1.70'
     implementation 'org.bouncycastle:bcpkix-jdk15to18:1.70'
+    
+    // WAJIB: Untuk eksekusi socket di background
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }
+
 
 
