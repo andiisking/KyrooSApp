@@ -6,12 +6,13 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log  // ✅ TAMBAH INI
 import androidx.annotation.RequiresApi
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
 import org.bouncycastle.cert.X509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
-import org.conscrypt.Conscrypt  // ✅ TAMBAH INI
+import org.conscrypt.Conscrypt
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.net.Socket
@@ -38,16 +39,18 @@ class AdbKey(private val context: Context, private val name: String) {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ENCRYPTION_KEY_ALIAS = "_kyroos_adb_enc_"
         
-        // ✅ BARU: Install Conscrypt sebagai provider pertama
+        // ✅ PERBAIKAN: String literal untuk provider name
+        private const val CONSCRYPT_PROVIDER = "Conscrypt"
+        
         init {
             try {
                 // Hapus Conscrypt jika sudah ada
-                val existingProvider = Security.getProvider(Conscrypt.PROVIDER_NAME)
+                val existingProvider = Security.getProvider(CONSCRYPT_PROVIDER)
                 if (existingProvider != null) {
-                    Security.removeProvider(Conscrypt.PROVIDER_NAME)
+                    Security.removeProvider(CONSCRYPT_PROVIDER)
                 }
-                // Install Conscrypt sebagai provider pertama (prioritas tertinggi)
-                Security.insertProviderAt(Conscrypt.newProviderBuilder().provideTrustManager(true).build(), 1)
+                // Install Conscrypt sebagai provider pertama
+                Security.insertProviderAt(Conscrypt.newProvider(), 1)
                 Log.d(TAG, "Conscrypt provider installed successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to install Conscrypt provider", e)
@@ -181,8 +184,8 @@ class AdbKey(private val context: Context, private val name: String) {
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun createSslContext(): SSLContext {
-        // ✅ PERBAIKAN: Gunakan "TLSv1.3" dengan Conscrypt provider
-        val ctx = SSLContext.getInstance("TLSv1.3", Conscrypt.PROVIDER_NAME)
+        // ✅ PERBAIKAN: Gunakan string literal "TLSv1.3"
+        val ctx = SSLContext.getInstance("TLSv1.3", CONSCRYPT_PROVIDER)
         ctx.init(arrayOf(keyManager), arrayOf(trustManager), SecureRandom())
         Log.d(TAG, "SSLContext created with Conscrypt provider")
         return ctx
