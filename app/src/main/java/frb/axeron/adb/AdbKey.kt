@@ -1,13 +1,11 @@
 package frb.axeron.adb
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import android.util.Log
 import androidx.annotation.RequiresApi
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
@@ -29,7 +27,6 @@ import java.security.spec.RSAPublicKeySpec
 import java.util.*
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
-import javax.crypto.spec.GCMParameterSpec
 import javax.net.ssl.*
 
 private const val TAG = "AdbKey"
@@ -39,10 +36,7 @@ class AdbKey(private val context: Context, private val name: String) {
     companion object {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ENCRYPTION_KEY_ALIAS = "_kyroos_adb_enc_"
-        private const val TRANSFORMATION = "AES/GCM/NoPadding"
-        private const val IV_SIZE = 12
-        private const val TAG_SIZE = 16
-
+        
         // Padding standar untuk tanda tangan RSA ADB
         private val PADDING = byteArrayOf(
             0x00, 0x01, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -69,9 +63,11 @@ class AdbKey(private val context: Context, private val name: String) {
 
     private val encryptionKey: Key
     private val privateKey: RSAPrivateKey
-    private val publicKey: RSAPublicKey
+    val publicKey: RSAPublicKey
     private val certificate: X509Certificate
-    private val adbKeyStore = PreferenceAdbKeyStore(context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE))
+    private val adbKeyStore = PreferenceAdbKeyStore(
+        context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+    )
 
     init {
         this.encryptionKey = getOrCreateEncryptionKey() ?: error("Keystore error")
@@ -80,33 +76,47 @@ class AdbKey(private val context: Context, private val name: String) {
             RSAPublicKeySpec(privateKey.modulus, RSAKeyGenParameterSpec.F4)
         ) as RSAPublicKey
 
-        // Membuat sertifikat digital KyrooS secara native
+        // Membuat sertifikat digital KyrooS
         val signer = JcaContentSignerBuilder("SHA256withRSA").build(privateKey)
         val certBuilder = X509v3CertificateBuilder(
-            X500Name("CN=KyrooS"), BigInteger.ONE, Date(0), Date(2461449600 * 1000), Locale.ROOT,
-            X500Name("CN=KyrooS"), SubjectPublicKeyInfo.getInstance(publicKey.encoded)
+            X500Name("CN=KyrooS"), 
+            BigInteger.ONE, 
+            Date(0), 
+            Date(2461449600L * 1000), 
+            Locale.ROOT,
+            X500Name("CN=KyrooS"), 
+            SubjectPublicKeyInfo.getInstance(publicKey.encoded)
         ).build(signer)
         
         this.certificate = CertificateFactory.getInstance("X.509")
             .generateCertificate(ByteArrayInputStream(certBuilder.encoded)) as X509Certificate
     }
 
-    // Fungsi pembantu agar PairingClient bisa mengambil kunci
     fun getPublicKeyString(): String {
         return Base64.encodeToString(publicKey.encoded, Base64.NO_WRAP) + " $name"
     }
-    
-    // Ganti blok adbPublicKey yang error dengan ini:
-     val adbPublicKey: ByteArray by lazy {
-     publicKey.adbEncoded(name) 
-     }
+
+    val adbPublicKey: ByteArray by lazy {
+        publicKey.adbEncoded(name) 
+    }
 
     private fun getOrCreateEncryptionKey(): Key? {
         val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         return ks.getKey(ENCRYPTION_KEY_ALIAS, null) ?: run {
-            val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-            gen.init(KeyGenParameterSpec.Builder(ENCRYPTION_KEY_ALIAS, KeyProperties.PURPOSE_DECRYPT or KeyProperties.PURPOSE_ENCRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).setKeySize(256).build())
+            val gen = KeyGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_AES, 
+                ANDROID_KEYSTORE
+            )
+            gen.init(
+                KeyGenParameterSpec.Builder(
+                    ENCRYPTION_KEY_ALIAS, 
+                    KeyProperties.PURPOSE_DECRYPT or KeyProperties.PURPOSE_ENCRYPT
+                )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build()
+            )
             gen.generateKey()
         }
     }
@@ -115,8 +125,11 @@ class AdbKey(private val context: Context, private val name: String) {
         val data = adbKeyStore.get()
         if (data != null) {
             try {
-                return KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(data)) as RSAPrivateKey
-            } catch (e: Exception) {}
+                return KeyFactory.getInstance("RSA")
+                    .generatePrivate(PKCS8EncodedKeySpec(data)) as RSAPrivateKey
+            } catch (e: Exception) {
+                // Ignore, generate new key
+            }
         }
         val gen = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA)
         gen.initialize(RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
@@ -133,44 +146,109 @@ class AdbKey(private val context: Context, private val name: String) {
         return cipher.doFinal(data)
     }
 
-    private var _sslContext: SSLContext? = null
-    
+    // FIX: Explicit type declaration untuk menghindari recursive problem
+    @Volatile
+    private var sslContextInstance: SSLContext? = null
+
     val sslContext: SSLContext
         @RequiresApi(Build.VERSION_CODES.R)
         get() {
-            if (_sslContext == null) {
-                val ctx = SSLContext.getInstance("TLSv1.3")
-                ctx.init(arrayOf(keyManager), arrayOf(trustManager), SecureRandom())
-                _sslContext = ctx
+            val cached = sslContextInstance
+            if (cached != null) return cached
+            
+            synchronized(this) {
+                var result = sslContextInstance
+                if (result == null) {
+                    result = createSslContext()
+                    sslContextInstance = result
+                }
+                return result
             }
-            return _sslContext!!
         }
 
-    private val keyManager get() = object : X509ExtendedKeyManager() {
-        override fun chooseClientAlias(t: Array<out String>, i: Array<out Principal>?, s: Socket?) = "key"
-        override fun getCertificateChain(a: String?) = if (a == "key") arrayOf(certificate) else null
-        override fun getPrivateKey(a: String?) = if (a == "key") privateKey else null
-        override fun getClientAliases(t: String?, i: Array<out Principal>?) = null
-        override fun getServerAliases(t: String?, i: Array<out Principal>?) = null
-        override fun chooseServerAlias(t: String, i: Array<out Principal>?, s: Socket?) = null
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun createSslContext(): SSLContext {
+        val ctx = SSLContext.getInstance("TLSv1.3")
+        ctx.init(arrayOf(keyManager), arrayOf(trustManager), SecureRandom())
+        return ctx
     }
 
-    private val trustManager get() = object : X509ExtendedTrustManager() {
-        override fun checkClientTrusted(c: Array<out X509Certificate>?, a: String?, s: Socket?) {}
-        override fun checkClientTrusted(c: Array<out X509Certificate>?, a: String?, e: SSLEngine?) {}
-        override fun checkClientTrusted(c: Array<out X509Certificate>?, a: String?) {}
-        override fun checkServerTrusted(c: Array<out X509Certificate>?, a: String?, s: Socket?) {}
-        override fun checkServerTrusted(c: Array<out X509Certificate>?, a: String?, e: SSLEngine?) {}
-        override fun checkServerTrusted(c: Array<out X509Certificate>?, a: String?) {}
-        override fun getAcceptedIssuers() = emptyArray<X509Certificate>()
+    private val keyManager: X509ExtendedKeyManager = object : X509ExtendedKeyManager() {
+        override fun chooseClientAlias(
+            keyType: Array<out String>?, 
+            issuers: Array<out Principal>?, 
+            socket: Socket?
+        ): String = "key"
+        
+        override fun getCertificateChain(alias: String?): Array<X509Certificate>? = 
+            if (alias == "key") arrayOf(certificate) else null
+            
+        override fun getPrivateKey(alias: String?): PrivateKey? = 
+            if (alias == "key") privateKey else null
+            
+        override fun getClientAliases(
+            keyType: String?, 
+            issuers: Array<out Principal>?
+        ): Array<String>? = null
+            
+        override fun getServerAliases(
+            keyType: String?, 
+            issuers: Array<out Principal>?
+        ): Array<String>? = null
+            
+        override fun chooseServerAlias(
+            keyType: String, 
+            issuers: Array<out Principal>?, 
+            socket: Socket?
+        ): String? = null
+    }
+
+    private val trustManager: X509ExtendedTrustManager = object : X509ExtendedTrustManager() {
+        override fun checkClientTrusted(
+            chain: Array<out X509Certificate>?, 
+            authType: String?, 
+            socket: Socket?
+        ) {}
+        
+        override fun checkClientTrusted(
+            chain: Array<out X509Certificate>?, 
+            authType: String?, 
+            engine: SSLEngine?
+        ) {}
+        
+        override fun checkClientTrusted(
+            chain: Array<out X509Certificate>?, 
+            authType: String?
+        ) {}
+        
+        override fun checkServerTrusted(
+            chain: Array<out X509Certificate>?, 
+            authType: String?, 
+            socket: Socket?
+        ) {}
+        
+        override fun checkServerTrusted(
+            chain: Array<out X509Certificate>?, 
+            authType: String?, 
+            engine: SSLEngine?
+        ) {}
+        
+        override fun checkServerTrusted(
+            chain: Array<out X509Certificate>?, 
+            authType: String?
+        ) {}
+        
+        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
     }
 }
 
-// Implementasi Storage KyrooS yang disederhanakan
 class PreferenceAdbKeyStore(private val preference: SharedPreferences) {
     fun put(bytes: ByteArray) {
-        preference.edit().putString("adbkey", Base64.encodeToString(bytes, Base64.NO_WRAP)).apply()
+        preference.edit()
+            .putString("adbkey", Base64.encodeToString(bytes, Base64.NO_WRAP))
+            .apply()
     }
+    
     fun get(): ByteArray? {
         val data = preference.getString("adbkey", null) ?: return null
         return Base64.decode(data, Base64.NO_WRAP)

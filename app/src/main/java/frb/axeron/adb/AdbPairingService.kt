@@ -34,15 +34,9 @@ class AdbPairingService : Service() {
         private const val REMOTE_INPUT_RESULT_KEY = "pairing_code"
         private const val PORT_KEY = "pairing_port"
 
-        /**
-         * Intent untuk memulai service
-         */
         fun startIntent(context: Context): Intent = 
             Intent(context, AdbPairingService::class.java).setAction(START_ACTION)
         
-        /**
-         * Intent untuk menghentikan service
-         */
         fun stopIntent(context: Context): Intent = 
             Intent(context, AdbPairingService::class.java).setAction(STOP_ACTION)
     }
@@ -50,9 +44,6 @@ class AdbPairingService : Service() {
     private var adbMdns: AdbMdns? = null
     private var started = false
 
-    /**
-     * Observer untuk menerima port pairing dari mDNS discovery
-     */
     private val observerPairing = Observer<Int> { port ->
         if (port != null && port > 0) {
             Log.d(TAG, "Pairing service found on port $port")
@@ -67,7 +58,6 @@ class AdbPairingService : Service() {
         super.onCreate()
         Log.d(TAG, "Service created")
         
-        // Buat notification channel
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL,
             "KyrooS ADB Pairing",
@@ -84,9 +74,7 @@ class AdbPairingService : Service() {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
         
         val notification: Notification? = when (intent?.action) {
-            START_ACTION -> {
-                onStartDiscovery()
-            }
+            START_ACTION -> onStartDiscovery()
             
             REPLY_ACTION -> {
                 val results = RemoteInput.getResultsFromIntent(intent)
@@ -94,7 +82,6 @@ class AdbPairingService : Service() {
                 val port = intent.getIntExtra(PORT_KEY, -1)
                 
                 if (!code.isNullOrBlank() && port != -1) {
-                    // Validasi format kode (6 digit)
                     if (code.matches(Regex("^\\d{6}$"))) {
                         onPairingCodeReceived(code, port)
                         workingNotification
@@ -115,13 +102,11 @@ class AdbPairingService : Service() {
                 null
             }
             
-            else -> {
-                Log.w(TAG, "Unknown action: ${intent?.action}")
-                return START_NOT_STICKY
-            }
+            else -> return START_NOT_STICKY
         }
 
         notification?.let {
+            // FIX: Import ServiceInfo sudah ditambahkan di atas
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID, 
@@ -136,112 +121,72 @@ class AdbPairingService : Service() {
         return START_STICKY
     }
 
-    /**
-     * Mulai discovery service pairing via mDNS
-     */
     private fun onStartDiscovery(): Notification {
         if (!started) {
             started = true
             Log.d(TAG, "Starting mDNS discovery")
-            
-            adbMdns = AdbMdns(this, AdbMdns.TLS_PAIRING, observerPairing).apply { 
-                start() 
-            }
+            adbMdns = AdbMdns(this, AdbMdns.TLS_PAIRING, observerPairing).apply { start() }
         }
         return searchingNotification
     }
 
-    /**
-     * Handle ketika kode pairing diterima dari user
-     */
     private fun onPairingCodeReceived(code: String, port: Int) {
         Log.d(TAG, "Starting pairing with port=$port")
         
-        // Update notifikasi ke "Sedang memproses..."
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIFICATION_ID, workingNotification)
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Buat atau ambil existing key
                 val adbKey = AdbKey(this@AdbPairingService, "kyroos_device")
-                
-                // Buat pairing client
                 val pairingClient = AdbPairingClient("127.0.0.1", port, code, adbKey)
                 
-                // Jalankan pairing
                 val success = pairingClient.use { it.start() }
                 
                 withContext(Dispatchers.Main) {
-                    if (success) {
-                        handleSuccess()
-                    } else {
-                        handleFailure(Exception("Pairing gagal, periksa kode dan coba lagi"))
-                    }
+                    if (success) handleSuccess() else handleFailure(Exception("Pairing gagal"))
                 }
                 
             } catch (e: AdbInvalidPairingCodeException) {
-                Log.e(TAG, "Invalid pairing code", e)
-                withContext(Dispatchers.Main) {
-                    handleFailure(Exception("Kode pairing salah"))
-                }
+                withContext(Dispatchers.Main) { handleFailure(Exception("Kode pairing salah")) }
             } catch (e: Exception) {
-                Log.e(TAG, "Pairing error", e)
-                withContext(Dispatchers.Main) {
-                    handleFailure(e)
-                }
+                withContext(Dispatchers.Main) { handleFailure(e) }
             }
         }
     }
 
-    /**
-     * Handle pairing berhasil
-     */
     private fun handleSuccess() {
         Log.i(TAG, "Pairing successful")
-        
         val nm = getSystemService(NotificationManager::class.java)
         val notification = Notification.Builder(this, NOTIFICATION_CHANNEL)
             .setContentTitle("KyrooS Berhasil Terhubung! ✅")
-            .setContentText("ADB Wireless siap digunakan. Anda bisa menutup aplikasi.")
+            .setContentText("ADB Wireless siap digunakan.")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setAutoCancel(true)
-            .setOngoing(false)
             .build()
 
         nm.notify(NOTIFICATION_ID, notification)
-        
-        // Stop discovery dan service
         adbMdns?.stop()
         stopSelf()
     }
 
-    /**
-     * Handle pairing gagal
-     */
     private fun handleFailure(exception: Throwable) {
         Log.e(TAG, "Pairing failed: ${exception.message}")
-        
         val nm = getSystemService(NotificationManager::class.java)
         val notification = Notification.Builder(this, NOTIFICATION_CHANNEL)
             .setContentTitle("Pairing Gagal ❌")
-            .setContentText(exception.message ?: "Terjadi kesalahan tidak diketahui")
+            .setContentText(exception.message ?: "Terjadi kesalahan")
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setAutoCancel(true)
             .build()
 
         nm.notify(NOTIFICATION_ID, notification)
-        
-        // Restart discovery
         started = false
         adbMdns?.stop()
         adbMdns = null
         onStartDiscovery()
     }
 
-    /**
-     * Tampilkan error notification sementara
-     */
     private fun showErrorNotification(message: String) {
         val nm = getSystemService(NotificationManager::class.java)
         val notification = Notification.Builder(this, NOTIFICATION_CHANNEL)
@@ -250,13 +195,9 @@ class AdbPairingService : Service() {
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setAutoCancel(true)
             .build()
-        
         nm.notify(NOTIFICATION_ID + 1, notification)
     }
 
-    /**
-     * Buat notifikasi input kode pairing
-     */
     private fun createInputNotification(port: Int): Notification {
         val remoteInput = RemoteInput.Builder(REMOTE_INPUT_RESULT_KEY)
             .setLabel("Masukkan Kode 6 Digit")
@@ -282,29 +223,22 @@ class AdbPairingService : Service() {
 
         return Notification.Builder(this, NOTIFICATION_CHANNEL)
             .setContentTitle("Layanan Pairing Ditemukan")
-            .setContentText("Ketuk untuk memasukkan kode 6 digit dari Wireless Debugging")
+            .setContentText("Ketuk untuk memasukkan kode 6 digit")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .addAction(replyAction)
             .setOngoing(true)
-            .setAutoCancel(false)
             .build()
     }
 
-    /**
-     * Notifikasi saat mencari service
-     */
     private val searchingNotification: Notification
         get() = Notification.Builder(this, NOTIFICATION_CHANNEL)
             .setContentTitle("Mencari Wireless Debugging...")
-            .setContentText("Pastikan Wireless Debugging aktif di pengaturan developer")
+            .setContentText("Pastikan Wireless Debugging aktif")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
-            .setProgress(0, 0, true) // Indeterminate progress
+            .setProgress(0, 0, true)
             .build()
 
-    /**
-     * Notifikasi saat sedang pairing
-     */
     private val workingNotification: Notification
         get() = Notification.Builder(this, NOTIFICATION_CHANNEL)
             .setContentTitle("Sedang Menghubungkan...")
