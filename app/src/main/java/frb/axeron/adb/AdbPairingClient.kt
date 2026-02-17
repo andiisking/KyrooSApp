@@ -173,39 +173,33 @@ class AdbPairingClient(
     private lateinit var pairingContext: PairingContext
     private var state: State = State.Ready
 
-    /**
-     * Memulai proses pairing ADB wireless
-     * @return true jika pairing berhasil, false jika gagal
-     */
     fun start(): Boolean {
         return try {
+            Log.i(TAG, "Starting pairing process...")
             setupTlsConnection()
             
             state = State.ExchangingMsgs
             if (!doExchangeMsgs()) {
-                state = State.Stopped
+                Log.e(TAG, "SPAKE2 exchange failed")
                 return false
             }
 
             state = State.ExchangingPeerInfo
             if (!doExchangePeerInfo()) {
-                state = State.Stopped
+                Log.e(TAG, "Peer info exchange failed")
                 return false
             }
 
+            Log.i(TAG, "Pairing completed successfully!")
             state = State.Stopped
-            Log.i(TAG, "Pairing completed successfully")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Pairing failed", e)
+            Log.e(TAG, "Pairing failed with exception", e)
             state = State.Stopped
             false
         }
     }
 
-    /**
-     * Setup koneksi TLS ke service pairing
-     */
     private fun setupTlsConnection() {
         Log.d(TAG, "Connecting to $host:$port")
         
@@ -222,16 +216,22 @@ class AdbPairingClient(
         inputStream = DataInputStream(sslSocket.inputStream)
         outputStream = DataOutputStream(sslSocket.outputStream)
 
-        // Export keying material dari TLS session
         val pairCodeBytes = pairCode.toByteArray(Charsets.UTF_8)
-        val keyMaterial = Conscrypt.exportKeyingMaterial(
-            sslSocket,
-            kExportedKeyLabel,
-            null,
-            kExportedKeySize
-        )
-
-        // Gabungkan pairing code dengan key material
+        
+        val keyMaterial = try {
+            Conscrypt.exportKeyingMaterial(
+                sslSocket,
+                kExportedKeyLabel,
+                null,
+                kExportedKeySize
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to export keying material, using fallback", e)
+            ByteArray(kExportedKeySize).apply {
+                java.security.SecureRandom().nextBytes(this)
+            }
+        }
+        
         val passwordBytes = ByteArray(pairCode.length + keyMaterial.size)
         pairCodeBytes.copyInto(passwordBytes)
         keyMaterial.copyInto(passwordBytes, pairCodeBytes.size)
@@ -244,16 +244,10 @@ class AdbPairingClient(
         Log.d(TAG, "Setup completed, ready for SPAKE2 exchange")
     }
 
-    /**
-     * Buat header packet pairing
-     */
     private fun createHeader(type: PairingPacketHeader.Type, payloadSize: Int): PairingPacketHeader {
         return PairingPacketHeader(kCurrentKeyHeaderVersion, type.value, payloadSize)
     }
 
-    /**
-     * Baca header dari input stream
-     */
     private fun readHeader(): PairingPacketHeader? {
         val bytes = ByteArray(kPairingPacketHeaderSize)
         inputStream.readFully(bytes)
@@ -261,9 +255,6 @@ class AdbPairingClient(
         return PairingPacketHeader.readFrom(buffer)
     }
 
-    /**
-     * Tulis header dan payload ke output stream
-     */
     private fun writeHeader(header: PairingPacketHeader, payload: ByteArray) {
         val buffer = ByteBuffer.allocate(kPairingPacketHeaderSize).order(ByteOrder.BIG_ENDIAN)
         header.writeTo(buffer)
@@ -274,9 +265,6 @@ class AdbPairingClient(
         Log.d(TAG, "write payload, size=${payload.size}")
     }
 
-    /**
-     * Lakukan pertukaran SPAKE2 messages
-     */
     private fun doExchangeMsgs(): Boolean {
         Log.d(TAG, "Starting SPAKE2 message exchange")
         
@@ -301,9 +289,6 @@ class AdbPairingClient(
         return pairingContext.initCipher(theirMessage)
     }
 
-    /**
-     * Lakukan pertukaran informasi peer (public key)
-     */
     private fun doExchangePeerInfo(): Boolean {
         Log.d(TAG, "Starting peer info exchange")
         
@@ -344,14 +329,9 @@ class AdbPairingClient(
         val theirPeerInfo = PeerInfo.readFrom(ByteBuffer.wrap(decrypted))
         Log.d(TAG, "Received peer info: $theirPeerInfo")
         
-        // Di sini bisa ditambahkan validasi public key peer jika diperlukan
-        
         return true
     }
 
-    /**
-     * Tutup semua resource
-     */
     override fun close() {
         Log.d(TAG, "Closing pairing client")
         
@@ -389,9 +369,6 @@ class AdbPairingClient(
             }
         }
 
-        /**
-         * Cek apakah pairing tersedia (native library bisa diload)
-         */
         @JvmStatic
         external fun available(): Boolean
     }
