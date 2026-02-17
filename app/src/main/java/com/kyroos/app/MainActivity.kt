@@ -6,9 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.webkit.JavascriptInterface
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
@@ -17,7 +15,6 @@ import androidx.core.content.ContextCompat
 import frb.axeron.adb.AdbClient
 import frb.axeron.adb.AdbKey
 import frb.axeron.adb.AdbPairingService
-import com.kyroos.app.R 
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -30,10 +27,8 @@ class MainActivity : AppCompatActivity() {
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            allowFileAccess = true
         }
         webView.webViewClient = WebViewClient()
-        
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
         webView.loadUrl("file:///android_asset/index.html")
 
@@ -43,10 +38,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkPairingStatus() {
         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
-        val port = prefs.getInt("paired_port", -1)
+        if (prefs.getInt("paired_port", -1) == -1) {
+            openWirelessSettings()
+        }
+    }
 
-        if (port == -1) {
-            openWirelessDebuggingSettings()
+    private fun openWirelessSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                startActivity(Intent("android.settings.WIFI_ADB_SETTINGS"))
+            } catch (e: Exception) {
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            }
         }
     }
 
@@ -54,62 +57,22 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-            } else { 
-                startPairingService() 
-            }
-        } else { 
-            startPairingService() 
-        }
+            } else { startService() }
+        } else { startService() }
     }
 
-    private fun startPairingService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val intent = Intent(this, AdbPairingService::class.java).apply { action = "start" }
-            startForegroundService(intent)
-        }
-    }
-
-    fun openWirelessDebuggingSettings() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                // Menggunakan String literal untuk menghindari error Unresolved Reference saat compile
-                val intent = Intent("android.settings.WIFI_ADB_SETTINGS")
-                startActivity(intent)
-            } catch (e: Exception) {
-                // Fallback jika menu langsung tidak ditemukan
-                val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                startActivity(intent)
-            }
-        }
+    private fun startService() {
+        val intent = Intent(this, AdbPairingService::class.java).apply { action = "start" }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
     }
 }
 
 class KyroosAdbInterface(private val context: Context) {
-
     @JavascriptInterface
     fun executeShell(command: String): String {
-        return try {
-            val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
-            val port = prefs.getInt("paired_port", -1)
-            
-            if (port == -1) return "Error: Perangkat belum ter-pairing!"
-            
-            val client = AdbClient(AdbKey(prefs), "127.0.0.1", port)
-            client.execute(command)
-        } catch (e: Exception) { 
-            "Error: ${e.message}" 
-        }
-    }
-
-    @JavascriptInterface
-    fun resetPairing() {
         val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
-        prefs.edit().clear().apply()
-        
-        if (context is MainActivity) {
-            context.runOnUiThread {
-                context.openWirelessDebuggingSettings()
-            }
-        }
+        val port = prefs.getInt("paired_port", -1)
+        if (port == -1) return "Error: Not Paired"
+        return AdbClient(AdbKey(prefs), "127.0.0.1", port).execute(command)
     }
 }

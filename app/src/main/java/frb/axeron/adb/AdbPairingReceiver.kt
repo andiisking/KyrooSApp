@@ -8,35 +8,41 @@ import android.widget.Toast
 
 class AdbPairingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val remoteInput = RemoteInput.getResultsFromIntent(intent)
-        // Mengambil port yang dideteksi oleh AdbMdns via Service
-        val port = intent.getIntExtra("detected_port", -1)
-
-        if (remoteInput != null && port != -1) {
-            val pairingCode = remoteInput.getCharSequence("extra_pairing_code").toString()
-            
-            // Simpan port ke SharedPreferences untuk digunakan AdbClient nanti
-            val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
-            prefs.edit().putInt("paired_port", port).apply()
-
-            // Eksekusi Pairing yang sebenarnya
-            val adbKey = AdbKey(prefs)
-            val pairingClient = AdbPairingClient(adbKey)
-            
-            val isSuccess = pairingClient.pair("127.0.0.1", port, pairingCode)
-
-            if (isSuccess) {
-                // Beritahu service bahwa pairing sukses untuk menampilkan notifikasi centang hijau
-                val successIntent = Intent(context, AdbPairingService::class.java).apply {
-                    action = "pairing_success"
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        
+        if (intent.action == "trigger_connect") {
+            // LOGIKA AUTO-CONNECT
+            val connectPort = intent.getIntExtra("port", -1)
+            if (connectPort != -1) {
+                // Simpan port koneksi utama
+                prefs.edit().putInt("paired_port", connectPort).apply()
+                
+                // Beritahu service bahwa kita sudah sukses terhubung
+                val serviceIntent = Intent(context, AdbPairingService::class.java).apply {
+                    action = "connection_success"
                 }
-                context.startService(successIntent)
-                Toast.makeText(context, "KyrooS: Pairing Berhasil di Port $port!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "Pairing Gagal! Cek kodenya lagi.", Toast.LENGTH_SHORT).show()
+                context.startService(serviceIntent)
             }
-        } else if (port == -1) {
-            Toast.makeText(context, "Tunggu sebentar, port belum terdeteksi...", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // LOGIKA PAIRING (INPUT KODE)
+        val results = RemoteInput.getResultsFromIntent(intent)
+        val port = intent.getIntExtra("port", -1)
+
+        if (results != null && port != -1) {
+            val code = results.getCharSequence("pairing_code").toString()
+            val isPairingOk = AdbPairingClient(AdbKey(prefs)).pair("127.0.0.1", port, code)
+            
+            if (isPairingOk) {
+                // Setelah pairing OK, suruh service cari port KONEKSI (_adb-tls-connect)
+                val serviceIntent = Intent(context, AdbPairingService::class.java).apply {
+                    action = "start_connect_scan"
+                }
+                context.startService(serviceIntent)
+            } else {
+                Toast.makeText(context, "Pairing Gagal! Cek Kode.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }
