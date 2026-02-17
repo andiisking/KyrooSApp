@@ -23,12 +23,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Pastikan R.layout.activity_main memiliki WebView dengan ID 'webView'
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
+            allowFileAccess = true
         }
         webView.webViewClient = WebViewClient()
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
@@ -47,9 +49,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun startPairing() {
         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        // Jika belum ada port tersimpan, jalankan scanner pairing
         if (prefs.getInt("paired_port", -1) == -1) {
-            val intent = Intent(this, AdbPairingService::class.java).apply { action = "start" }
-            startForegroundService(intent)
+            val intent = Intent(this, AdbPairingService::class.java).apply { 
+                action = "start" // Sesuai dengan START_ACTION di AdbPairingService
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
         }
     }
 }
@@ -59,15 +68,21 @@ class KyroosAdbInterface(private val context: Context) {
     fun executeShell(command: String): String {
         val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val port = prefs.getInt("paired_port", -1)
-        if (port == -1) return "Error: Belum Pairing!"
+        
+        if (port == -1) return "Error: Perangkat belum dipairing!"
 
         return try {
             runBlocking(Dispatchers.IO) {
-                val key = AdbKey(prefs)
-                // Urutan parameter asli Axeron: (AdbKey, Port, Host)
+                // Sesuai AdbKey(Context, Name) versi Axeron
+                val key = AdbKey(context, "kyroos_device") 
+                
+                // Urutan parameter Axeron: (Key, Port, Host)
                 val client = AdbClient(key, port, "127.0.0.1")
                 
-                // Membuka stream shell sesuai AdbClient.kt asli
+                // WAJIB: Lakukan handshake koneksi dulu
+                client.connect() 
+                
+                // Buka stream shell
                 val stream = client.open("shell:$command")
                 val result = stream.readAll().toString(Charsets.UTF_8)
                 

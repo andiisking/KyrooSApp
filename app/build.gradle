@@ -29,9 +29,20 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.10.0'
     
-    // Wajib untuk Axeron ADB Protocol
+    // 1. Wajib untuk SSL/TLS ADB (Conscrypt)
     implementation 'org.conscrypt:conscrypt-android:2.5.2'
+    
+    // 2. Wajib untuk Kriptografi & RSA (BouncyCastle Provider)
     implementation 'org.bouncycastle:bcprov-jdk15to18:1.70'
+    
+    // 3. WAJIB DITAMBAHKAN: Untuk X509v3CertificateBuilder (BouncyCastle PKIX)
+    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.70'
+    
+    // 4. Untuk eksekusi socket di background (Coroutines)
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // 5. Lifecycle untuk Observer di Mdns/Service
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
 }
+
 
