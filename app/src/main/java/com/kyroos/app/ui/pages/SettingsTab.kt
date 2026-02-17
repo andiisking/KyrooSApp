@@ -1,13 +1,14 @@
 package com.kyroos.app.ui.pages
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -48,7 +49,6 @@ fun SettingsTab(prefs: android.content.SharedPreferences, onNav: (String) -> Uni
     }
 }
 
-// Config Page, Tweaks Page, AppDetail (Di-merge agar tidak kepanjangan scriptnya)
 @Composable
 fun KyroosSubPages(page: String, pkg: String, onBack: () -> Unit, onNav: (String) -> Unit) {
     val scope = rememberCoroutineScope()
@@ -59,7 +59,6 @@ fun KyroosSubPages(page: String, pkg: String, onBack: () -> Unit, onNav: (String
         )
         when(page) {
             "config" -> {
-                // Konfigurasi Sigma (Baca/Tulis file Config)
                 var deep by remember{ mutableStateOf(false) }
                 var power by remember{ mutableStateOf(false) }
                 var cache by remember{ mutableStateOf(false) }
@@ -68,70 +67,42 @@ fun KyroosSubPages(page: String, pkg: String, onBack: () -> Unit, onNav: (String
                     deep = cfg.contains("deep=on"); power = cfg.contains("power=on"); cache = cfg.contains("chace=on")
                 }
                 fun save() = scope.launch {
-                    AdbManager.shell("echo \"deep=\${if(deep) "on" else "off"}\" > /storage/emulated/0/kikiros && echo \"power=\${if(power) "on" else "off"}\" >> /storage/emulated/0/kikiros && echo \"chace=\${if(cache) "on" else "off"}\" >> /storage/emulated/0/kikiros")
+                    val d = if(deep) "on" else "off"
+                    val p = if(power) "on" else "off"
+                    val c = if(cache) "on" else "off"
+                    AdbManager.shell("echo \"deep=$d\" > /storage/emulated/0/kikiros && echo \"power=$p\" >> /storage/emulated/0/kikiros && echo \"chace=$c\" >> /storage/emulated/0/kikiros")
                 }
                 Column(modifier = Modifier.padding(20.dp)) {
                     SettingItem(Icons.Rounded.Bedtime, "Force Deepsleep", "When screen is off", trailing = { Switch(deep, { deep=it; save() }) })
                     SettingItem(Icons.Rounded.BatterySaver, "Auto Powersave", "Automatic power efficiency", trailing = { Switch(power, { power=it; save() }) })
                     SettingItem(Icons.Rounded.CleaningServices, "Auto Clear Cache", "Background cleaning", trailing = { Switch(cache, { cache=it; save() }) })
-                    Text("Changes applied instantly", color = KyOutline, modifier = Modifier.padding(top=20.dp).align(Alignment.CenterHorizontally))
                 }
             }
             "tweaks" -> {
                 var resW by remember { mutableStateOf("") }
                 var resH by remember { mutableStateOf("") }
-                var showDialog by remember { mutableStateOf(false) }
-                if(showDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showDialog=false },
-                        title = { Text("Are you sure?", color=Color.White) },
-                        text = { Text("Running brutal appops may affect notifications.", color=KyOutline) },
-                        confirmButton = { Button(onClick={ showDialog=false; onNav("opaps") }) { Text("Run") } },
-                        dismissButton = { TextButton(onClick={ showDialog=false }) { Text("Cancel", color=Color.White) } },
-                        containerColor = KySurface
-                    )
-                }
                 Column(modifier = Modifier.padding(20.dp)) {
-                    SettingItem(Icons.Rounded.Security, "Brutal Appops", "Aggressive background restriction", trailing = { Switch(false, { if(it) showDialog=true }) })
+                    SettingItem(Icons.Rounded.Security, "Brutal Appops", "Aggressive background restriction", onClick = { onNav("opaps") })
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Custom Resolution", color = KyPrimary, modifier = Modifier.padding(bottom=8.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = resW, onValueChange = {resW=it}, label = {Text("Width")}, modifier = Modifier.weight(1f))
-                        OutlinedTextField(value = resH, onValueChange = {resH=it}, label = {Text("Height")}, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = resW, onValueChange = {resW=it}, label = {Text("Width", color = Color.White)}, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = resH, onValueChange = {resH=it}, label = {Text("Height", color = Color.White)}, modifier = Modifier.weight(1f))
                     }
-                    Button(onClick = { scope.launch{ AdbManager.shell("wm size \${resW}x\${resH}") } }, modifier = Modifier.fillMaxWidth().padding(top=8.dp)) { Text("Apply Resolution") }
-                    TextButton(onClick = { scope.launch{ AdbManager.shell("wm size reset") } }, modifier = Modifier.fillMaxWidth()) { Text("Reset to Default") }
+                    Button(onClick = { scope.launch{ AdbManager.shell("wm size ${resW}x${resH}") } }, modifier = Modifier.fillMaxWidth().padding(top=8.dp)) { Text("Apply Resolution") }
+                    TextButton(onClick = { scope.launch{ AdbManager.shell("wm size reset") } }, modifier = Modifier.fillMaxWidth()) { Text("Reset") }
                 }
             }
             "detail" -> {
-                var angle by remember{ mutableStateOf(false) }
-                var game by remember{ mutableStateOf(false) }
-                var dev by remember{ mutableStateOf(false) }
                 var white by remember{ mutableStateOf(false) }
                 LaunchedEffect(Unit) { white = AdbManager.shell("cmd deviceidle whitelist | grep $pkg").isNotBlank() }
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Graphics Driver", color=KyPrimary, modifier=Modifier.padding(bottom=8.dp))
-                    SettingItem(Icons.Rounded._3dRotation, "Angle Driver", "Force OpenGL ES", trailing = { Switch(angle, { angle=it; if(it){game=false;dev=false} }) })
-                    SettingItem(Icons.Rounded.SportsEsports, "Game Driver", "Use Game Driver Overlay", trailing = { Switch(game, { game=it; if(it){angle=false;dev=false} }) })
-                    SettingItem(Icons.Rounded.Architecture, "Developer Driver", "Use Prerelease Driver", trailing = { Switch(dev, { dev=it; if(it){angle=false;game=false} }) })
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Power Management", color=KyPrimary, modifier=Modifier.padding(bottom=8.dp))
-                    SettingItem(Icons.Rounded.BatteryAlert, "Battery Whitelist", "Device Idle Whitelist", trailing = { Switch(white, { white=it; scope.launch{ AdbManager.shell("cmd deviceidle whitelist \${if(it) "+" else "-"}$pkg") } }) })
+                    SettingItem(Icons.Rounded.BatteryAlert, "Battery Whitelist", "Device Idle Whitelist", trailing = { Switch(white, { white=it; scope.launch{ AdbManager.shell("cmd deviceidle whitelist ${if(it) "+" else "-"}$pkg") } }) })
                 }
             }
             "opaps" -> {
-                var showOpapsDialog by remember { mutableStateOf<AppInfo?>(null) }
-                if(showOpapsDialog != null) {
-                    AlertDialog(
-                        onDismissRequest = { showOpapsDialog=null },
-                        title = { Text("Apply Opaps?", color=Color.White) },
-                        text = { Text("Restrict background activity for:\n${showOpapsDialog!!.packageName}", color=KyOutline) },
-                        confirmButton = { Button(onClick={ scope.launch{ AdbManager.shell("nohup opaps ${showOpapsDialog!!.packageName}"); showOpapsDialog=null; onBack() } }) { Text("Apply") } },
-                        dismissButton = { TextButton(onClick={ showOpapsDialog=null }) { Text("Cancel", color=Color.White) } },
-                        containerColor = KySurface
-                    )
+                AppsListScreen(isThirdPartyOnly = true) { app ->
+                    scope.launch { AdbManager.shell("nohup opaps ${app.packageName}"); onBack() }
                 }
-                AppsListScreen(isThirdPartyOnly = true) { showOpapsDialog = it }
             }
         }
     }
