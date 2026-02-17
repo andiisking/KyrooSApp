@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -24,9 +25,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var webView: WebView
+    internal lateinit var webView: WebView
     
-    // ✅ PERBAIKAN: Flag untuk cek receiver sudah ter-register
     private var isReceiverRegistered = false
     
     private val pairingReceiver = object : BroadcastReceiver() {
@@ -42,7 +42,6 @@ class MainActivity : AppCompatActivity() {
                             "Pairing berhasil! Port: $port", 
                             Toast.LENGTH_LONG).show()
                         
-                        // ✅ PERBAIKAN: Pastikan WebView sudah initialized
                         if (::webView.isInitialized) {
                             webView.evaluateJavascript(
                                 "if(window.onPairingSuccess) window.onPairingSuccess($port)", 
@@ -75,7 +74,6 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
         webView.loadUrl("file:///android_asset/index.html")
 
-        // ✅ PERBAIKAN: Register dengan flag
         val filter = IntentFilter().apply {
             addAction(AdbPairingService.PAIRING_SUCCESS_ACTION)
             addAction(AdbPairingService.PAIRING_FAILED_ACTION)
@@ -97,7 +95,6 @@ class MainActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
-        // ✅ PERBAIKAN: Cek flag sebelum unregister
         if (isReceiverRegistered) {
             try {
                 unregisterReceiver(pairingReceiver)
@@ -107,7 +104,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ BARU: Handle permission result
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -163,14 +159,12 @@ class MainActivity : AppCompatActivity() {
 
 class KyroosAdbInterface(private val context: Context) {
     
-    // ✅ PERBAIKAN: Gunakan coroutine async, bukan runBlocking
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
         val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val port = prefs.getInt("paired_port", -1)
         
         if (port == -1) {
-            // Kirim error ke JS via callback
             (context as? MainActivity)?.runOnUiThread {
                 (context as? MainActivity)?.webView?.evaluateJavascript(
                     "if(window.adbCallback) window.adbCallback('$callbackId', 'Error: Belum dipairing', true)",
@@ -180,7 +174,6 @@ class KyroosAdbInterface(private val context: Context) {
             return
         }
 
-        // ✅ PERBAIKAN: Gunakan lifecycleScope, bukan runBlocking
         (context as? MainActivity)?.lifecycleScope?.launch(Dispatchers.IO) {
             val result = try {
                 val key = AdbKey(context, "kyroos_device") 
@@ -197,7 +190,6 @@ class KyroosAdbInterface(private val context: Context) {
                 "Error: ${e.message}"
             }
             
-            // Kirim hasil ke JS di UI thread
             withContext(Dispatchers.Main) {
                 val escapedResult = result.replace("'", "\\'").replace("\n", "\\n")
                 (context as? MainActivity)?.webView?.evaluateJavascript(
@@ -208,7 +200,6 @@ class KyroosAdbInterface(private val context: Context) {
         }
     }
     
-    // ✅ BARU: Method synchronous untuk simple command (fallback)
     @JavascriptInterface
     fun executeShellSync(command: String): String {
         val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
