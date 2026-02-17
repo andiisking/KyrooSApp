@@ -25,25 +25,27 @@ android {
 }
 
 dependencies {
-    // 1. Core Kotlin tetap diperlukan
+    // 1. Dasar Kotlin & Android Core
     implementation 'androidx.core:core-ktx:1.12.0'
     
-    // 2. HAPUS 'androidx.appcompat:appcompat:1.6.1' karena duplikat dengan RikkaX
-    // Cukup gunakan RikkaX AppCompat saja:
+    // 2. GUNAKAN RIKKAX (Hapus androidx.appcompat:appcompat standar)
     implementation 'dev.rikka.rikkax.appcompat:appcompat:1.6.1'
     implementation 'dev.rikka.rikkax.core:core:1.4.1'
     
-    // 3. Material Components diperlukan untuk tema visual
+    // 3. Material Components (Wajib untuk tema)
     implementation 'com.google.android.material:material:1.10.0'
     
-    // 4. Library pendukung lainnya (Lifecycle, Conscrypt, BouncyCastle, Coroutines)
+    // 4. Lifecycle & Coroutines (Wajib untuk Service & Background Task)
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
     implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.6.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    
+    // 5. Enkripsi ADB (Wajib)
     implementation 'org.conscrypt:conscrypt-android:2.5.2'
     implementation 'org.bouncycastle:bcprov-jdk15to18:1.70'
     implementation 'org.bouncycastle:bcpkix-jdk15to18:1.70'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }
+
 
 
 
