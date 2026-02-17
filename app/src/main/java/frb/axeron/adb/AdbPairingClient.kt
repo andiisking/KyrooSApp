@@ -1,29 +1,24 @@
 package frb.axeron.adb
 
-class AdbClient(private val adbKey: AdbKey, private val host: String, private val port: Int) {
-    companion object {
-        init { 
-            try { System.loadLibrary("adb") } catch (e: Exception) { e.printStackTrace() } 
+import org.conscrypt.Conscrypt
+import java.security.Security
+
+class AdbPairingClient(private val adbKey: AdbKey) {
+    init {
+        if (Security.getProvider("Conscrypt") == null) {
+            Security.insertProviderAt(Conscrypt.newProvider(), 1)
         }
     }
 
-    // Fungsi native untuk eksekusi shell
-    external fun shell(command: String, port: Int, pub: String, priv: String): String
-
-    // Fungsi native untuk proses PAIRING (Ini kunci utamanya)
-    external fun pair(code: String, port: Int, pub: String, priv: String): String
-
-    fun execute(command: String): String {
+    fun pair(host: String, port: Int, pairingCode: String): Boolean {
         return try {
-            shell(command, port, adbKey.getPublicKeyString(), "kyroos_priv")
-        } catch (e: Exception) { "Error: ${e.message}" }
-    }
-    
-    // Fungsi untuk melakukan pairing dan menangkap hasilnya
-    fun doPair(code: String): String {
-        return try {
-            // Kita gunakan port yang dideteksi AdbMdns
-            pair(code, port, adbKey.getPublicKeyString(), "kyroos_priv")
-        } catch (e: Exception) { "Pairing Error: ${e.message}" }
+            val adbClient = AdbClient(adbKey, host, port)
+            val result = adbClient.doPair(pairingCode)
+            
+            // Verifikasi hasil dari library native
+            result.contains("success", ignoreCase = true) || result.isEmpty()
+        } catch (e: Exception) {
+            false
+        }
     }
 }
