@@ -37,6 +37,12 @@ class AdbPairingService : Service() {
         private const val REMOTE_INPUT_RESULT_KEY = "pairing_code"
         private const val PORT_KEY = "pairing_port"
 
+        // ✅ BARU: Action untuk broadcast hasil pairing
+        const val PAIRING_SUCCESS_ACTION = "frb.axeron.adb.PAIRING_SUCCESS"
+        const val PAIRING_FAILED_ACTION = "frb.axeron.adb.PAIRING_FAILED"
+        const val EXTRA_PORT = "port"
+        const val EXTRA_ERROR = "error"
+
         fun startIntent(context: Context): Intent = 
             Intent(context, AdbPairingService::class.java).setAction(START_ACTION)
         
@@ -49,9 +55,7 @@ class AdbPairingService : Service() {
     private var isServiceStopping = false
     private var currentPort: Int = -1
 
-    // ✅ PERBAIKAN: Observer dengan parameter non-nullable Int
     private val observerPairing = Observer<Int> { port ->
-        // port adalah Int (non-nullable di Observer<Int>)
         if (port > 0 && !isServiceStopping && !isPairingInProgress) {
             Log.d(TAG, "Pairing service found on port $port")
             currentPort = port
@@ -157,7 +161,7 @@ class AdbPairingService : Service() {
                 withContext(Dispatchers.Main) {
                     isPairingInProgress = false
                     if (success) {
-                        handleSuccess()
+                        handleSuccess(port)  // ✅ Kirim port yang berhasil
                     } else {
                         handleFailure("Pairing gagal, periksa kode dan coba lagi")
                     }
@@ -185,18 +189,30 @@ class AdbPairingService : Service() {
         }
     }
 
-    private fun handleSuccess() {
-        Log.i(TAG, "Pairing successful! Stopping service completely...")
+    // ✅ PERBAIKAN: Tambah parameter port dan kirim broadcast
+    private fun handleSuccess(port: Int) {
+        Log.i(TAG, "Pairing successful on port $port! Stopping service...")
         
         isServiceStopping = true
         isPairingInProgress = false
+        
+        // ✅ BARU: Simpan port ke SharedPreferences
+        val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putInt("paired_port", port).apply()
+        
+        // ✅ BARU: Kirim broadcast ke MainActivity
+        val broadcastIntent = Intent(PAIRING_SUCCESS_ACTION).apply {
+            putExtra(EXTRA_PORT, port)
+            setPackage(packageName)  // Hanya untuk app ini
+        }
+        sendBroadcast(broadcastIntent)
         
         val nm = getSystemService(NotificationManager::class.java)
         nm.cancel(NOTIFICATION_ID)
         
         val successNotification = Notification.Builder(this, NOTIFICATION_CHANNEL)
             .setContentTitle("KyrooS Berhasil Terhubung! ✅")
-            .setContentText("ADB Wireless siap digunakan.")
+            .setContentText("ADB Wireless aktif di port $port")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setAutoCancel(true)
             .setOngoing(false)
@@ -212,6 +228,13 @@ class AdbPairingService : Service() {
         Log.e(TAG, "Pairing failed: $message")
         
         if (isServiceStopping) return
+        
+        // ✅ BARU: Kirim broadcast gagal
+        val broadcastIntent = Intent(PAIRING_FAILED_ACTION).apply {
+            putExtra(EXTRA_ERROR, message)
+            setPackage(packageName)
+        }
+        sendBroadcast(broadcastIntent)
         
         val nm = getSystemService(NotificationManager::class.java)
         

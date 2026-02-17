@@ -16,8 +16,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     
-    <!-- Hapus jika tidak digunakan -->
-    <!-- <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" /> -->
+    <!-- Permission untuk Broadcast Receiver (internal) -->
+    <!-- Tidak perlu permission khusus untuk broadcast internal -->
 
     <application
         android:allowBackup="true"
@@ -43,6 +43,21 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- ✅ BARU: Broadcast Receiver untuk hasil pairing (opsional jika pakai registerReceiver di MainActivity) -->
+        <!-- Jika menggunakan registerReceiver di MainActivity, receiver ini tidak wajib -->
+        <!-- Tapi jika ingin receiver terpisah, aktifkan ini: -->
+        <!--
+        <receiver 
+            android:name="com.kyroos.app.PairingResultReceiver"
+            android:enabled="true" 
+            android:exported="false">
+            <intent-filter>
+                <action android:name="frb.axeron.adb.PAIRING_SUCCESS" />
+                <action android:name="frb.axeron.adb.PAIRING_FAILED" />
+            </intent-filter>
+        </receiver>
+        -->
 
     </application>
 </manifest>
