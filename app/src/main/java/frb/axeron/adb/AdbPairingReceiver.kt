@@ -9,24 +9,31 @@ import android.widget.Toast
 class AdbPairingReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val results = RemoteInput.getResultsFromIntent(intent)
-        val port = intent.getIntExtra("port", -1)
-        val host = intent.getStringExtra("host") ?: "127.0.0.1"
+        val port = intent.getIntExtra("pairing_port", -1)
+        val host = intent.getStringExtra("pairing_host") ?: "127.0.0.1"
 
         if (results != null && port != -1) {
             val code = results.getCharSequence("pairing_code").toString()
             val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
             
-            // Memanggil AdbPairingClient yang sudah diperbaiki
-            val isSuccess = AdbPairingClient(AdbKey(prefs)).pair(host, port, code)
+            // Menggunakan PairingClient asli Axeron (Membutuhkan libadb.so)
+            val pairingClient = AdbPairingClient(context, host, port)
             
-            if (isSuccess) {
-                prefs.edit().putInt("paired_port", port).apply()
-                val successIntent = Intent(context, AdbPairingService::class.java).apply {
-                    action = "pairing_success"
+            try {
+                // Proses Pairing Native Spake2
+                val success = pairingClient.pair(code)
+                if (success) {
+                    prefs.edit().putInt("paired_port", port).apply()
+                    Toast.makeText(context, "Pairing Berhasil!", Toast.LENGTH_SHORT).show()
+                    
+                    // Beritahu service agar menghentikan scan
+                    val serviceIntent = Intent(context, AdbPairingService::class.java).apply { action = "stop" }
+                    context.startService(serviceIntent)
                 }
-                context.startService(successIntent)
-            } else {
-                Toast.makeText(context, "Pairing Gagal! Periksa kode atau koneksi.", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Gagal: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                pairingClient.close()
             }
         }
     }

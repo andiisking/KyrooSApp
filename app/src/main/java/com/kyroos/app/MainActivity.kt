@@ -6,12 +6,19 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import frb.axeron.adb.AdbClient
+import frb.axeron.adb.AdbKey
 import frb.axeron.adb.AdbPairingService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -21,8 +28,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
-        webView.settings.javaScriptEnabled = true
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+        }
         webView.webViewClient = WebViewClient()
+        webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
         webView.loadUrl("file:///android_asset/index.html")
 
         checkPermissions()
@@ -32,33 +43,44 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-            } else { startPairingService() }
-        } else { startPairingService() }
+            } else { startPairing() }
+        } else { startPairing() }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            startPairingService()
+    private fun startPairing() {
+        val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        if (prefs.getInt("paired_port", -1) == -1) {
+            val intent = Intent(this, AdbPairingService::class.java).apply { action = "start" }
+            startForegroundService(intent)
+            try {
+                startActivity(Intent("android.settings.WIFI_ADB_SETTINGS"))
+            } catch (e: Exception) {
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            }
         }
     }
+}
 
-    private fun startPairingService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val intent = Intent(this, AdbPairingService::class.java).apply {
-                action = "start_pairing_scan"
+class KyroosAdbInterface(private val context: Context) {
+    @JavascriptInterface
+    fun executeShell(command: String): String {
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        val port = prefs.getInt("paired_port", -1)
+        if (port == -1) return "Error: Belum Pairing!"
+
+        return try {
+            // Menggunakan alur Socket asli Axeron
+            runBlocking(Dispatchers.IO) {
+                val key = AdbKey(prefs)
+                val client = AdbClient(key, port, "127.0.0.1")
+                val stream = client.open("shell:$command")
+                val output = stream.readAll().toString(Charsets.UTF_8)
+                stream.close()
+                client.close()
+                output
             }
-            startForegroundService(intent)
-            
-            // Cek jika belum dipairing, buka settings
-            val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
-            if (prefs.getInt("paired_port", -1) == -1) {
-                try {
-                    startActivity(Intent("android.settings.WIFI_ADB_SETTINGS"))
-                } catch (e: Exception) {
-                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                }
-            }
+        } catch (e: Exception) {
+            "Error: ${e.message}"
         }
     }
 }
