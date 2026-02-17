@@ -2,7 +2,7 @@ package frb.axeron.adb
 
 class AdbClient(private val adbKey: AdbKey, private val host: String, private val port: Int) {
     companion object {
-        init { System.loadLibrary("adb") }
+        init { try { System.loadLibrary("adb") } catch (e: Exception) {} }
     }
 
     external fun shell(command: String, port: Int, pub: String, priv: String): String
