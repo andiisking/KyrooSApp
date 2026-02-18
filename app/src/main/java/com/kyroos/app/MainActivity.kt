@@ -9,7 +9,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
-import android.util.DisplayMetrics
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -105,23 +104,25 @@ class MainActivity : AppCompatActivity() {
     private fun grantSelfWriteSecureSettings() {
         Thread {
             try {
-                Log.d("Grant", "🚀 Granting WRITE_SECURE_SETTINGS...")
+                Log.d("Grant", "🚀 Granting WRITE_SECURE_SETTINGS via Shizuku...")
                 
-                val process = Runtime.getRuntime().exec(arrayOf(
+                // 🔥 PERBAIKAN: Gunakan Shizuku API agar tidak kena Permission Denial
+                val process = Shizuku.newProcess(arrayOf(
                     "pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS"
-                ))
+                ), null, null)
                 
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
                 val output = reader.readText()
                 val errorReader = BufferedReader(InputStreamReader(process.errorStream))
                 val error = errorReader.readText()
                 val exitCode = process.waitFor()
+                process.destroy()
                 
                 if (exitCode == 0 && error.isEmpty()) {
                     Log.d("Grant", "✅ Success!")
                     hasWriteSecureSettings = true
                     runOnUiThread {
-                        Toast.makeText(this, "✅ WRITE_SECURE_SETTINGS granted!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "✅ WRITE_SECURE_SETTINGS granted!", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     Log.e("Grant", "❌ Failed: $error")
@@ -230,58 +231,21 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun parseCommand(command: String): Array<String> {
-        return when {
-            // 🔥 WM SIZE -> GANTI JADI CMD WINDOW SIZE
-            command.startsWith("wm size") -> {
-                arrayOf("cmd", "window", "size")
-            }
-            // WM DENSITY -> GANTI JADI CMD WINDOW DENSITY
-            command.startsWith("wm density") -> {
-                val parts = command.split(" ")
-                if (parts.size > 2) {
-                    arrayOf("cmd", "window", "density", parts[2])
-                } else {
-                    arrayOf("cmd", "window", "density")
-                }
-            }
-            // WM COMMAND LAINNYA
-            command.startsWith("wm") -> {
-                val parts = command.split(" ")
-                when (parts.size) {
-                    1 -> arrayOf("cmd", "window", "size")
-                    2 -> arrayOf("cmd", "window", parts[1])
-                    else -> arrayOf("cmd", "window", parts[1], parts[2])
-                }
-            }
-            // SETTINGS COMMAND
-            command.startsWith("settings") -> {
-                command.split(" ").toTypedArray()
-            }
-            // CMD DEVICEIDLE
-            command.startsWith("cmd deviceidle") -> {
-                command.split(" ").toTypedArray()
-            }
-            // CAT COMMAND (butuh sh -c untuk pipe)
-            command.contains("|") || command.contains(">") || command.contains("&&") -> {
-                // Kalau ada pipe/redirect, fallback ke sh -c
-                arrayOf("sh", "-c", command)
-            }
-            // DEFAULT: split by space
-            else -> {
-                command.split(" ").toTypedArray()
-            }
-        }
+        // 🔥 PERBAIKAN: Bungkus SEMUA command dengan `sh -c` 
+        // Ini akan menjamin command yang menggunakan pipe (|), &&, atau spasi berfungsi 100%
+        return arrayOf("sh", "-c", command)
     }
     
     private fun executeCommand(cmdArray: Array<String>): String {
         if (!isShizukuAvailable || !isShizukuPermissionGranted) {
-            return "Error: Shizuku tidak tersedia"
+            return "Error: Shizuku tidak tersedia atau belum diizinkan"
         }
         
         return try {
             Log.d("Shizuku", "🚀 Executing: ${cmdArray.joinToString(" ")}")
             
-            val process = Runtime.getRuntime().exec(cmdArray)
+            // 🔥 PERBAIKAN UTAMA: Gunakan Shizuku.newProcess agar dieksekusi sebagai ADB/Root
+            val process = Shizuku.newProcess(cmdArray, null, null)
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
@@ -297,6 +261,7 @@ class MainActivity : AppCompatActivity() {
             }
             
             val exitCode = process.waitFor()
+            process.destroy() // Cegah memory leak
             
             val result = if (exitCode == 0 || output.isNotEmpty()) {
                 output.toString().trim()
@@ -308,6 +273,7 @@ class MainActivity : AppCompatActivity() {
             result
             
         } catch (e: Exception) {
+            Log.e("Shizuku", "❌ Exec Error", e)
             "Error: ${e.message}"
         }
     }
