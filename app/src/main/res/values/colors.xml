@@ -1,3 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="notification">#FF6200EE</color>
+    <color name="md_theme_light_primary">#FFB596</color>
+    <color name="md_theme_light_onPrimary">#361400</color>
+    <color name="md_theme_light_primaryContainer">#723523</color>
+    <color name="md_theme_light_onPrimaryContainer">#FFDBD1</color>
+    <color name="md_theme_light_secondary">#FFB596</color>
+    <color name="md_theme_light_onSecondary">#361400</color>
+    <color name="md_theme_light_secondaryContainer">#534339</color>
+    <color name="md_theme_light_onSecondaryContainer">#FFDBCA</color>
+    <color name="md_theme_light_background">#1A120E</color>
+    <color name="md_theme_light_onBackground">#EFE0DA</color>
+    <color name="md_theme_light_surface">#1A120E</color>
+    <color name="md_theme_light_onSurface">#EFE0DA</color>
+    <color name="md_theme_light_error">#BA1A1A</color>
+    <color name="md_theme_light_onError">#FFFFFF</color>
+    <color name="md_theme_light_errorContainer">#93000A</color>
+    <color name="md_theme_light_onErrorContainer">#FFDAD6</color>
+    <color name="md_theme_light_outline">#A08D85</color>
 </resources>

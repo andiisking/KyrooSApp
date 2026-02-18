@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Include semua file yang ingin di-backup -->
+    <include domain="sharedpref" path="."/>
+    <include domain="file" path="."/>
+    <include domain="database" path="."/>
+    <include domain="external" path="."/>
+</full-backup-content>
