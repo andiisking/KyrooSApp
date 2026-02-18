@@ -4,29 +4,26 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class AdbMessage(
-        val command: Int,
-        val arg0: Int,
-        val arg1: Int,
-        val data_length: Int,
-        val data_crc32: Int,
-        val magic: Int,
-        val data: ByteArray?
+    val command: Int,
+    val arg0: Int,
+    val arg1: Int,
+    val data_length: Int,
+    val data_crc32: Int,
+    val magic: Int,
+    val data: ByteArray?
 ) {
+    constructor(command: Int, arg0: Int, arg1: Int, data: ByteArray?) : this(
+        command, arg0, arg1,
+        data?.size ?: 0,
+        crc32(data),
+        (command.toLong() xor 0xFFFFFFFF).toInt(),
+        data
+    )
 
     constructor(command: Int, arg0: Int, arg1: Int, data: String) : this(
-            command,
-            arg0,
-            arg1,
-            "$data\u0000".toByteArray())
-
-    constructor(command: Int, arg0: Int, arg1: Int, data: ByteArray?) : this(
-            command,
-            arg0,
-            arg1,
-            data?.size ?: 0,
-            crc32(data),
-            (command.toLong() xor 0xFFFFFFFF).toInt(),
-            data)
+        command, arg0, arg1,
+        "$data\u0000".toByteArray()
+    )
 
     fun validate(): Boolean {
         if (command != magic xor -0x1) return false
@@ -105,18 +102,12 @@ class AdbMessage(
     }
 
     companion object {
-
         const val HEADER_LENGTH = 24
-
-
         private fun crc32(data: ByteArray?): Int {
             if (data == null) return 0
             var res = 0
             for (b in data) {
-                if (b >= 0)
-                    res += b
-                else
-                    res += b + 256
+                res += if (b >= 0) b else b + 256
             }
             return res
         }

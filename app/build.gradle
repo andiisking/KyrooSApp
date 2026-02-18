@@ -47,7 +47,7 @@ dependencies {
     // 1. Kotlin Core
     implementation 'androidx.core:core-ktx:1.12.0'
     
-    // 2. AppCompat standar (gunakan yang standar, bukan RikkaX yang bermasalah)
+    // 2. AppCompat standar
     implementation 'androidx.appcompat:appcompat:1.6.1'
     
     // 3. Material Components
@@ -67,7 +67,13 @@ dependencies {
     // 7. Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     
-    // 8. Hapus atau comment RikkaX jika tidak digunakan di tempat lain
-    // implementation 'dev.rikka.rikkax.appcompat:appcompat:1.6.1'
-    // implementation 'dev.rikka.rikkax.core:core:1.4.1'
+    // 8. RIKKA CORE - Library yang dibutuhkan oleh kode Axeron
+    implementation 'dev.rikka.rikkax.core:core:1.4.1'
+    
+    // 9. RIKKA SHIZUKU - Untuk akses root/ADB yang lebih baik (opsional, tapi disarankan)
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
+    
+    // 10. AndroidX Annotation
+    implementation 'androidx.annotation:annotation:1.7.0'
 }

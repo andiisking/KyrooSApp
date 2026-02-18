@@ -1,7 +1,6 @@
 package frb.axeron.adb
 
 object AdbProtocol {
-
     const val A_SYNC = 0x434e5953
     const val A_CNXN = 0x4e584e43
     const val A_AUTH = 0x48545541
@@ -13,7 +12,6 @@ object AdbProtocol {
 
     const val A_VERSION = 0x01000000
     const val A_MAXDATA = 4096
-
     const val A_STLS_VERSION = 0x01000000
 
     const val ADB_AUTH_TOKEN = 1

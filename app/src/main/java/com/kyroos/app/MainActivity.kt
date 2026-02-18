@@ -22,6 +22,7 @@ import androidx.lifecycle.lifecycleScope
 import frb.axeron.adb.AdbClient
 import frb.axeron.adb.AdbKey
 import frb.axeron.adb.AdbPairingService
+import frb.axeron.adb.PreferenceAdbKeyStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,7 +80,7 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = true
         }
         
-        // ✅ TAMBAHKAN WebChromeClient untuk menangkap console.log dari JavaScript
+        // WebChromeClient untuk menangkap console.log dari JavaScript
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 Log.d("JS_Console", "${message.message()} -- Dari baris ${message.lineNumber()} dari ${message.sourceId()}")
@@ -112,7 +113,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Setiap kali activity dilanjutkan, periksa apakah port tersimpan masih valid
         verifyStoredPort()
     }
     
@@ -177,15 +177,10 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             Toast.makeText(this, "Menggunakan port tersimpan: $pairedPort", Toast.LENGTH_SHORT).show()
-            // Verifikasi apakah port masih aktif
             verifyStoredPort()
         }
     }
 
-    /**
-     * Memeriksa apakah port yang tersimpan masih dapat dijangkau.
-     * Jika tidak, hapus dari preferences dan mulai pairing ulang.
-     */
     internal fun verifyStoredPort() {
         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val port = prefs.getInt("paired_port", -1)
@@ -200,7 +195,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, 
                         "Koneksi ADB terputus, memulai pairing ulang...", 
                         Toast.LENGTH_LONG).show()
-                    startPairing() // ini akan memulai service karena port sudah -1
+                    startPairing()
                 } else {
                     Log.d("MainActivity", "Stored port $port is reachable")
                 }
@@ -208,10 +203,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Coba sambung ke localhost:port dengan timeout 2000ms.
-     * Jika berhasil (socket connected), anggap port aktif.
-     */
     private suspend fun isPortReachable(port: Int, timeoutMs: Int = 2000): Boolean = withContext(Dispatchers.IO) {
         return@withContext try {
             Socket().use { socket ->
@@ -228,10 +219,6 @@ class MainActivity : AppCompatActivity() {
 
 class KyroosAdbInterface(private val context: Context) {
     
-    /**
-     * Method untuk eksekusi shell command (SYNC - return langsung)
-     * Digunakan oleh JavaScript yang memanggil: KyroosApp.executeShell(cmd)
-     */
     @JavascriptInterface
     fun executeShell(command: String): String {
         Log.d("KyroosAdb", "executeShell (sync) called: $command")
@@ -244,20 +231,36 @@ class KyroosAdbInterface(private val context: Context) {
         }
 
         return try {
-            val key = AdbKey(context, "kyroos_device") 
+            // Buat AdbKeyStore menggunakan PreferenceAdbKeyStore dari Axeron
+            val keyStore = PreferenceAdbKeyStore(prefs)
+            val key = AdbKey(keyStore, "kyroos_device")
             val client = AdbClient(key, port, "127.0.0.1")
             
-            client.connect() 
+            client.connect()
+            
+            // Gunakan shellCommand dengan listener untuk mengumpulkan output
+            val result = StringBuilder()
+            val latch = java.util.concurrent.CountDownLatch(1)
+            
+            client.shellCommand(command) { chunk ->
+                result.append(String(chunk, Charsets.UTF_8))
+            }
+            
+            // Karena shellCommand tidak sinkron, kita perlu menunggu.
+            // Dalam implementasi Axeron, command akan menunggu sampai selesai.
+            // Tapi karena kita pakai stream, kita bisa pakai open seperti sebelumnya.
+            // Untuk amannya, kita tetap pakai stream karena sudah diperbaiki.
+            
+            // Alternatif: pakai stream seperti sebelumnya
             val stream = client.open("shell:$command")
-            val result = stream.readAll().toString(Charsets.UTF_8)
+            val output = stream.readAll().toString(Charsets.UTF_8)
             
             stream.close()
             client.close()
-            Log.d("KyroosAdb", "Result: $result")
-            result
+            Log.d("KyroosAdb", "Result: $output")
+            output
         } catch (e: Exception) {
             Log.e("KyroosAdb", "executeShell error: ${e.message}")
-            // Jika gagal karena koneksi, coba verifikasi port lagi
             if (e.message?.contains("Connection refused") == true) {
                 (context as? MainActivity)?.verifyStoredPort()
             }
@@ -265,10 +268,6 @@ class KyroosAdbInterface(private val context: Context) {
         }
     }
     
-    /**
-     * Method untuk eksekusi shell command (ASYNC dengan callback)
-     * Digunakan oleh JavaScript yang memanggil: KyroosApp.executeShell(cmd, callbackId)
-     */
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
         Log.d("KyroosAdb", "executeShell (async) called: $command, callbackId: $callbackId")
@@ -288,10 +287,11 @@ class KyroosAdbInterface(private val context: Context) {
 
         (context as? MainActivity)?.lifecycleScope?.launch(Dispatchers.IO) {
             val result = try {
-                val key = AdbKey(context, "kyroos_device") 
+                val keyStore = PreferenceAdbKeyStore(prefs)
+                val key = AdbKey(keyStore, "kyroos_device")
                 val client = AdbClient(key, port, "127.0.0.1")
                 
-                client.connect() 
+                client.connect()
                 val stream = client.open("shell:$command")
                 val output = stream.readAll().toString(Charsets.UTF_8)
                 
@@ -301,7 +301,6 @@ class KyroosAdbInterface(private val context: Context) {
                 output
             } catch (e: Exception) {
                 Log.e("KyroosAdb", "Async error: ${e.message}")
-                // Jika gagal koneksi, beri sinyal ke UI untuk verifikasi ulang
                 if (e.message?.contains("Connection refused") == true) {
                     withContext(Dispatchers.Main) {
                         (context as? MainActivity)?.verifyStoredPort()
@@ -320,10 +319,6 @@ class KyroosAdbInterface(private val context: Context) {
         }
     }
     
-    /**
-     * Method untuk eksekusi shell command (SYNC - return langsung)
-     * Alias dari executeShell(command: String) untuk kompatibilitas
-     */
     @JavascriptInterface
     fun executeShellSync(command: String): String {
         return executeShell(command)
