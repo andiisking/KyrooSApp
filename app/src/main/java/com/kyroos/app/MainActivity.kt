@@ -59,8 +59,6 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupWebView() {
-        WebView(this).clearCache(true)
-        
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -73,7 +71,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
             
-            // 🔥 PENTING: Izinkan network
+            // Izinkan network
             blockNetworkImage = false
             blockNetworkLoads = false
             cacheMode = WebSettings.LOAD_DEFAULT
@@ -92,6 +90,26 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
     
+    override fun onResume() {
+        super.onResume()
+        checkShizukuStatus()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+        } catch (e: Exception) { }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
@@ -152,14 +170,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // 🔥 FUNGSI EKSEKUSI SHELL YANG SEBENARNYA
+    // ========== EXECUTE SHELL ==========
+    
     fun executeShell(command: String, callbackId: String) {
-        Log.d("Shell-EXEC", "🚀 Menjalankan: $command")
+        Log.d("Shell", "🚀 Executing: $command")
         
         Thread {
             try {
-                // 🔥 GUNAKAN Runtime.getRuntime().exec()
-                val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+                // 🔥 SEDERHANA: Langsung exec tanpa sh -c
+                val process = Runtime.getRuntime().exec(command)
                 
                 // Baca output
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -184,9 +203,9 @@ class MainActivity : AppCompatActivity() {
                     "Error($exitCode): ${error.toString().trim()}"
                 }
                 
-                Log.d("Shell-EXEC", "✅ Hasil: ${result.take(100)}...")
+                Log.d("Shell", "✅ Result: ${result.take(100)}...")
                 
-                // Kirim hasil ke JavaScript
+                // Kirim ke JavaScript
                 runOnUiThread {
                     val escaped = result
                         .replace("\\", "\\\\")
@@ -199,7 +218,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 
             } catch (e: Exception) {
-                Log.e("Shell-EXEC", "❌ Error: ${e.message}")
+                Log.e("Shell", "❌ Error: ${e.message}")
                 runOnUiThread {
                     val jsCode = "window.shellCallback('$callbackId', 'Error: ${e.message}', true)"
                     webView.evaluateJavascript(jsCode, null)
@@ -209,10 +228,10 @@ class MainActivity : AppCompatActivity() {
     }
     
     fun executeShellSync(command: String): String {
-        Log.d("Shell-SYNC", "🚀 Menjalankan: $command")
+        Log.d("Shell", "🚀 Sync: $command")
         
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val process = Runtime.getRuntime().exec(command)
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
@@ -238,6 +257,8 @@ class MainActivity : AppCompatActivity() {
             "Error: ${e.message}"
         }
     }
+    
+    // ========== FUNGSI UNTUK JS ==========
     
     fun isShizukuAvailable(): Boolean {
         return isShizukuAvailable && isShizukuPermissionGranted
