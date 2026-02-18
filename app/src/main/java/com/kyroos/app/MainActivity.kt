@@ -106,10 +106,12 @@ class MainActivity : AppCompatActivity() {
             try {
                 Log.d("Grant", "🚀 Granting WRITE_SECURE_SETTINGS via Shizuku...")
                 
-                // 🔥 PERBAIKAN: Gunakan Shizuku API agar tidak kena Permission Denial
-                val process = Shizuku.newProcess(arrayOf(
-                    "pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS"
-                ), null, null)
+                // 🔥 PERBAIKAN: Casting null secara eksplisit agar Kotlin tidak membaca fungsi private
+                val process = Shizuku.newProcess(
+                    arrayOf("pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS"), 
+                    null as Array<String>?, 
+                    null as String?
+                )
                 
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
                 val output = reader.readText()
@@ -231,8 +233,6 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun parseCommand(command: String): Array<String> {
-        // 🔥 PERBAIKAN: Bungkus SEMUA command dengan `sh -c` 
-        // Ini akan menjamin command yang menggunakan pipe (|), &&, atau spasi berfungsi 100%
         return arrayOf("sh", "-c", command)
     }
     
@@ -244,8 +244,8 @@ class MainActivity : AppCompatActivity() {
         return try {
             Log.d("Shizuku", "🚀 Executing: ${cmdArray.joinToString(" ")}")
             
-            // 🔥 PERBAIKAN UTAMA: Gunakan Shizuku.newProcess agar dieksekusi sebagai ADB/Root
-            val process = Shizuku.newProcess(cmdArray, null, null)
+            // 🔥 PERBAIKAN: Casting null secara eksplisit
+            val process = Shizuku.newProcess(cmdArray, null as Array<String>?, null as String?)
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
