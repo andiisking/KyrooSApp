@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     internal var isShizukuAvailable = false
     internal var isShizukuPermissionGranted = false
     internal var isStoragePermissionGranted = false
+    internal var hasWriteSecureSettings = false
     
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
@@ -43,6 +44,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (isShizukuPermissionGranted) {
                     Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
+                    grantSelfWriteSecureSettings()
                 } else {
                     Toast.makeText(this, "❌ Shizuku Denied", Toast.LENGTH_LONG).show()
                 }
@@ -60,6 +62,7 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         checkPermissions()
         setupShizuku()
+        checkWriteSecureSettings()
     }
     
     private fun setupWebView() {
@@ -89,8 +92,50 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
     
+    private fun checkWriteSecureSettings() {
+        try {
+            val result = executeCommand(arrayOf("settings", "get", "global", "angle_gl_driver_selection_pkgs"))
+            hasWriteSecureSettings = !result.contains("SecurityException") && !result.contains("Permission Denial")
+            Log.d("Settings", "Has WRITE_SECURE_SETTINGS: $hasWriteSecureSettings")
+        } catch (e: Exception) {
+            hasWriteSecureSettings = false
+        }
+    }
+    
+    private fun grantSelfWriteSecureSettings() {
+        Thread {
+            try {
+                Log.d("Grant", "🚀 Granting WRITE_SECURE_SETTINGS...")
+                
+                val process = Runtime.getRuntime().exec(arrayOf(
+                    "pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS"
+                ))
+                
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                val output = reader.readText()
+                val errorReader = BufferedReader(InputStreamReader(process.errorStream))
+                val error = errorReader.readText()
+                val exitCode = process.waitFor()
+                
+                if (exitCode == 0 && error.isEmpty()) {
+                    Log.d("Grant", "✅ Success!")
+                    hasWriteSecureSettings = true
+                    runOnUiThread {
+                        Toast.makeText(this, "✅ WRITE_SECURE_SETTINGS granted!", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Log.e("Grant", "❌ Failed: $error")
+                }
+                
+                checkWriteSecureSettings()
+                
+            } catch (e: Exception) {
+                Log.e("Grant", "❌ Error: ${e.message}")
+            }
+        }.start()
+    }
+    
     private fun checkPermissions() {
-        // Cek Storage Permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 requestManageStoragePermission()
@@ -110,7 +155,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        // Cek Notification Permission (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
                 != PackageManager.PERMISSION_GRANTED) {
@@ -157,6 +201,7 @@ class MainActivity : AppCompatActivity() {
                     Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
                 } else {
                     isShizukuPermissionGranted = true
+                    grantSelfWriteSecureSettings()
                 }
             }
         } catch (e: Exception) {
@@ -169,10 +214,7 @@ class MainActivity : AppCompatActivity() {
     fun executeShell(command: String, callbackId: String) {
         Thread {
             try {
-                val result = when {
-                    command.startsWith("wm size") -> getWmSizeFromDisplay()
-                    else -> executeCommand(command)
-                }
+                val result = executeCommand(parseCommand(command))
                 
                 runOnUiThread {
                     val escaped = result.replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
@@ -187,24 +229,59 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
     
-    private fun getWmSizeFromDisplay(): String {
-        val metrics = DisplayMetrics()
-        windowManager.defaultDisplay.getMetrics(metrics)
-        return "Physical size: ${metrics.widthPixels}x${metrics.heightPixels}"
+    private fun parseCommand(command: String): Array<String> {
+        return when {
+            // 🔥 WM SIZE -> GANTI JADI CMD WINDOW SIZE
+            command.startsWith("wm size") -> {
+                arrayOf("cmd", "window", "size")
+            }
+            // WM DENSITY -> GANTI JADI CMD WINDOW DENSITY
+            command.startsWith("wm density") -> {
+                val parts = command.split(" ")
+                if (parts.size > 2) {
+                    arrayOf("cmd", "window", "density", parts[2])
+                } else {
+                    arrayOf("cmd", "window", "density")
+                }
+            }
+            // WM COMMAND LAINNYA
+            command.startsWith("wm") -> {
+                val parts = command.split(" ")
+                when (parts.size) {
+                    1 -> arrayOf("cmd", "window", "size")
+                    2 -> arrayOf("cmd", "window", parts[1])
+                    else -> arrayOf("cmd", "window", parts[1], parts[2])
+                }
+            }
+            // SETTINGS COMMAND
+            command.startsWith("settings") -> {
+                command.split(" ").toTypedArray()
+            }
+            // CMD DEVICEIDLE
+            command.startsWith("cmd deviceidle") -> {
+                command.split(" ").toTypedArray()
+            }
+            // CAT COMMAND (butuh sh -c untuk pipe)
+            command.contains("|") || command.contains(">") || command.contains("&&") -> {
+                // Kalau ada pipe/redirect, fallback ke sh -c
+                arrayOf("sh", "-c", command)
+            }
+            // DEFAULT: split by space
+            else -> {
+                command.split(" ").toTypedArray()
+            }
+        }
     }
     
-    // 🔥 UBAH dari private menjadi internal biar bisa diakses
-    internal fun executeCommand(command: String): String {
-        // Cek apakah Shizuku tersedia
+    private fun executeCommand(cmdArray: Array<String>): String {
         if (!isShizukuAvailable || !isShizukuPermissionGranted) {
-            return "Error: Shizuku tidak tersedia atau izin belum diberikan"
+            return "Error: Shizuku tidak tersedia"
         }
         
         return try {
-            Log.d("Shizuku", "🚀 Executing: $command")
+            Log.d("Shizuku", "🚀 Executing: ${cmdArray.joinToString(" ")}")
             
-            // Eksekusi command
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val process = Runtime.getRuntime().exec(cmdArray)
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
@@ -231,21 +308,20 @@ class MainActivity : AppCompatActivity() {
             result
             
         } catch (e: Exception) {
-            Log.e("Shizuku", "❌ Error: ${e.message}")
             "Error: ${e.message}"
         }
     }
     
     fun executeShellSync(command: String): String {
-        return if (command.startsWith("wm size")) {
-            getWmSizeFromDisplay()
-        } else {
-            executeCommand(command)
+        return try {
+            executeCommand(parseCommand(command))
+        } catch (e: Exception) {
+            "Error: ${e.message}"
         }
     }
     
     fun isShizukuAvailable(): Boolean = isShizukuAvailable && isShizukuPermissionGranted
-    fun canAccessSettings(): Boolean = isShizukuAvailable && isShizukuPermissionGranted
+    fun hasSettingsPermission(): Boolean = hasWriteSecureSettings
     
     fun getShizukuStatus(): String = when {
         !isShizukuAvailable -> "not_installed"
@@ -268,9 +344,8 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface fun executeShell(cmd: String, id: String) = activity.executeShell(cmd, id)
     @JavascriptInterface fun executeShellSync(cmd: String): String = activity.executeShellSync(cmd)
     @JavascriptInterface fun isShizukuAvailable(): Boolean = activity.isShizukuAvailable()
-    @JavascriptInterface fun canAccessSettings(): Boolean = activity.canAccessSettings()
+    @JavascriptInterface fun hasSettingsPermission(): Boolean = activity.hasSettingsPermission()
     @JavascriptInterface fun getShizukuStatus(): String = activity.getShizukuStatus()
     @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
     @JavascriptInterface fun isStorageGranted(): Boolean = activity.isStorageGranted()
-    @JavascriptInterface fun testShizuku(): String = activity.executeCommand("echo 'Shizuku is working' && id")
 }
