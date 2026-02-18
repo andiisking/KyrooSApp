@@ -100,17 +100,27 @@ class MainActivity : AppCompatActivity() {
             hasWriteSecureSettings = false
         }
     }
+
+    // 🔥 JURUS PAMUNGKAS: Fungsi ini akan memaksa eksekusi Shizuku melewati batasan Kotlin
+    private fun createShizukuProcess(cmdArray: Array<String>): Process {
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true // Membuka paksa akses meskipun dianggap private oleh sistem
+        return method.invoke(null, cmdArray, null, null) as Process
+    }
     
     private fun grantSelfWriteSecureSettings() {
         Thread {
             try {
                 Log.d("Grant", "🚀 Granting WRITE_SECURE_SETTINGS via Shizuku...")
                 
-                // 🔥 PERBAIKAN FINAL: Menggunakan emptyArray() untuk menghindari ambiguitas null di Kotlin
-                val process = Shizuku.newProcess(
-                    arrayOf("pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS"), 
-                    emptyArray<String>(), 
-                    null
+                // Menggunakan helper Reflection
+                val process = createShizukuProcess(
+                    arrayOf("pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS")
                 )
                 
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -233,6 +243,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun parseCommand(command: String): Array<String> {
+        // sh -c memastikan semua command termasuk pipe (|) dan kutipan jalan dengan sempurna
         return arrayOf("sh", "-c", command)
     }
     
@@ -244,8 +255,8 @@ class MainActivity : AppCompatActivity() {
         return try {
             Log.d("Shizuku", "🚀 Executing: ${cmdArray.joinToString(" ")}")
             
-            // 🔥 PERBAIKAN FINAL: Menggunakan emptyArray() untuk menghindari ambiguitas null di Kotlin
-            val process = Shizuku.newProcess(cmdArray, emptyArray<String>(), null)
+            // Menggunakan helper Reflection
+            val process = createShizukuProcess(cmdArray)
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
