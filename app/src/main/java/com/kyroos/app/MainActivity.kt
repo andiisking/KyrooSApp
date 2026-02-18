@@ -22,6 +22,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuBinderWrapper
+import rikka.shizuku.ShizukuService
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -170,30 +172,16 @@ class MainActivity : AppCompatActivity() {
                 val result = when {
                     command.startsWith("wm size") -> getWmSizeFromDisplay()
                     
-                    // KHUSUS UNTUK SETTINGS COMMAND - PAKAI SHIZUKU
-                    command.startsWith("settings") -> {
-                        if (isShizukuAvailable && isShizukuPermissionGranted) {
-                            executeWithShizuku(command)
-                        } else {
-                            "Error: Shizuku diperlukan untuk mengubah settings"
-                        }
-                    }
-                    
-                    // KHUSUS UNTUK WM COMMAND LAINNYA
+                    // KHUSUS UNTUK COMMAND YANG BUTUH SHIZUKU
+                    command.startsWith("settings") || 
+                    command.startsWith("cmd deviceidle") ||
                     command.startsWith("wm") -> {
                         if (isShizukuAvailable && isShizukuPermissionGranted) {
-                            executeWithShizuku("cmd window ${command.substring(3)}")
+                            // 🔥 PAKAI RUNTIME.EXEC() BIAR SIMPLE
+                            // Karena Shizuku newProcess private
+                            executeWithRuntime(command)
                         } else {
-                            "Error: Shizuku diperlukan untuk wm command"
-                        }
-                    }
-                    
-                    // KHUSUS UNTUK DEVICEIDLE WHITELIST
-                    command.startsWith("cmd deviceidle") -> {
-                        if (isShizukuAvailable && isShizukuPermissionGranted) {
-                            executeWithShizuku(command)
-                        } else {
-                            "Error: Shizuku diperlukan untuk deviceidle"
+                            "Error: Shizuku diperlukan untuk command ini"
                         }
                     }
                     
@@ -256,22 +244,6 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             "Error: ${e.message}"
-        }
-    }
-    
-    private fun executeWithShizuku(command: String): String {
-        return try {
-            val process = Shizuku.newProcess(command.split(" ").toTypedArray(), null, null)
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val output = StringBuilder()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                output.append(line).append("\n")
-            }
-            process.waitFor()
-            output.toString().trim()
-        } catch (e: Exception) {
-            "Shizuku error: ${e.message}"
         }
     }
     
