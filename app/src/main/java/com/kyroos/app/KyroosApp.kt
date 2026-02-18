@@ -16,12 +16,14 @@ class KyroosApp : Application() {
         super.onCreate()
         instance = this
         
-        // Setup Shell untuk menggunakan Shizuku - CARA BARU untuk libsu 5.2.0
+        // Setup Shell untuk menggunakan Shizuku
         Shell.enableVerboseLogging = false
-        Shell.setDefaultBuilder(Shell.Builder.create()
-            .setFlags(Shell.FLAG_USE_SHIZUKU)  // FLAG_USE_SHIZUKU tersedia di sini
+        
+        // Gunakan nilai langsung 1 << 1 (nilai FLAG_USE_SHIZUKU = 2)
+        Shell.Builder.create()
+            .setFlags(2)  // 2 = FLAG_USE_SHIZUKU
             .setInitializers(KyroosInitializer::class.java)
-        )
+            .build()
     }
     
     class KyroosInitializer : Initializer() {

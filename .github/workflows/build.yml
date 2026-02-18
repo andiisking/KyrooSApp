@@ -35,38 +35,10 @@ jobs:
           fi
 
       - name: Build Debug APK
-        id: build
-        continue-on-error: true  # Biarkan lanjut walau gagal
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug
         
-      # ===== UPLOAD REPORT APAPUN HASILNYA =====
-      - name: Upload Build Reports
-        if: always()  # Selalu upload, baik sukses maupun gagal
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: build-reports-${{ github.sha }}
-          path: |
-            app/build/reports/
-            app/build/outputs/logs/
-          retention-days: 7
-          
-      # ===== UPLOAD APK HANYA JIKA SUKSES =====
-      - name: Upload APK (if success)
-        if: steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: KyrooS-Debug-${{ github.sha }}
+          name: KyrooS-Debug
           path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
-          
-      # ===== FAILURE NOTIFICATION =====
-      - name: Build Status
-        if: always()
-        run: |
-          if [[ "${{ steps.build.outcome }}" == "success" ]]; then
-            echo "✅ Build berhasil!"
-          else
-            echo "❌ Build gagal!"
-            echo "📝 Cek build reports di artifacts untuk detail error"
-            exit 1
-          fi
