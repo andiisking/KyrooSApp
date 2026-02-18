@@ -170,7 +170,60 @@ private class PairingContext private constructor(private val nativePtr: Long) {
 }
 
 /**
+ * Fungsi HKDF untuk menurunkan kunci secara deterministik dan aman
+ */
+private object Hkdf {
+    private const val HMAC_ALGORITHM = "HmacSHA256"
+    private const val HASH_SIZE = 32 // SHA256 menghasilkan 32 byte
+
+    /**
+     * HKDF Extract: PRK = HMAC-Hash(salt, IKM)
+     */
+    fun extract(salt: ByteArray, ikm: ByteArray): ByteArray {
+        val mac = Mac.getInstance(HMAC_ALGORITHM)
+        mac.init(SecretKeySpec(salt, HMAC_ALGORITHM))
+        return mac.doFinal(ikm)
+    }
+
+    /**
+     * HKDF Expand: OKM = HKDF-Expand(PRK, info, L)
+     */
+    fun expand(prk: ByteArray, info: ByteArray, length: Int): ByteArray {
+        val mac = Mac.getInstance(HMAC_ALGORITHM)
+        mac.init(SecretKeySpec(prk, HMAC_ALGORITHM))
+        
+        val okm = ByteArray(length)
+        var t = ByteArray(0)
+        var i = 1
+        var pos = 0
+        
+        while (pos < length) {
+            // T(i) = HMAC-Hash(PRK, T(i-1) | info | i)
+            val data = t + info + byteArrayOf(i.toByte())
+            t = mac.doFinal(data)
+            
+            // Salin ke okm
+            val bytesToCopy = minOf(t.size, length - pos)
+            t.copyInto(okm, pos, 0, bytesToCopy)
+            pos += bytesToCopy
+            i++
+        }
+        
+        return okm
+    }
+
+    /**
+     * HKDF全长函数: OKM = HKDF(salt, IKM, info, L)
+     */
+    fun derive(salt: ByteArray, ikm: ByteArray, info: ByteArray, length: Int): ByteArray {
+        val prk = extract(salt, ikm)
+        return expand(prk, info, length)
+    }
+}
+
+/**
  * Client untuk melakukan pairing ADB wireless
+ * VERSI FIX: Menggunakan HKDF untuk derivasi kunci yang konsisten
  */
 @RequiresApi(Build.VERSION_CODES.R)
 class AdbPairingClient(
@@ -228,6 +281,7 @@ class AdbPairingClient(
 
     /**
      * Setup koneksi TLS dan menghasilkan key material untuk pairing
+     * VERSI FIX: Menggunakan HKDF untuk derivasi kunci yang konsisten
      */
     private fun setupTlsConnection() {
         Log.d(TAG, "Connecting to $host:$port")
@@ -248,43 +302,29 @@ class AdbPairingClient(
         outputStream = DataOutputStream(sslSocket.outputStream)
 
         val pairCodeBytes = pairCode.toByteArray(Charsets.UTF_8)
-        
-        // ✅ METODE 1: Gunakan session ID dan pair code sebagai seed
         val session = sslSocket.session
         val sessionId = session.id
-        
+
         Log.d(TAG, "Session ID: ${sessionId.size} bytes")
         
-        // Gabungkan pairCode dan sessionId sebagai seed
-        val seed = pairCodeBytes + sessionId
-        val random = java.security.SecureRandom()
-        random.setSeed(seed)
+        // ========== PERBAIKAN UTAMA ==========
+        // Gunakan HKDF untuk menurunkan kunci secara deterministik
+        // Salt: string tetap + pairCode untuk uniqueness
+        val salt = "adb-pairing-v2-${pairCode}".toByteArray(Charsets.UTF_8)
         
-        // Generate key material deterministik dari seed
-        val keyMaterial = ByteArray(kExportedKeySize)
-        random.nextBytes(keyMaterial)
+        // IKM (Input Key Material): kombinasi pairCode dan sessionId
+        val ikm = pairCodeBytes + sessionId
         
-        // ✅ METODE 2: Alternatif dengan HKDF jika tersedia
-        // Gunakan kombinasi dari kedua metode untuk redundansi
-        try {
-            // Coba buat key material dengan PRF sederhana
-            val mac = Mac.getInstance("HmacSHA256")
-            val tempKey = SecretKeySpec(pairCodeBytes, "HmacSHA256")
-            mac.init(tempKey)
-            val hkdfMaterial = mac.doFinal(sessionId)
-            
-            // XOR dengan keyMaterial yang sudah ada
-            for (i in 0 until minOf(keyMaterial.size, hkdfMaterial.size)) {
-                // ✅ PERBAIKAN: XOR untuk Byte harus dengan konversi ke Int
-                keyMaterial[i] = (keyMaterial[i].toInt() xor hkdfMaterial[i].toInt()).toByte()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "HKDF fallback failed, using basic seed only", e)
-        }
+        // Info: konteks untuk derivasi kunci
+        val info = "adb-spake2-key".toByteArray(Charsets.UTF_8)
         
-        val passwordBytes = ByteArray(pairCode.length + keyMaterial.size)
-        pairCodeBytes.copyInto(passwordBytes)
-        keyMaterial.copyInto(passwordBytes, pairCodeBytes.size)
+        // Derive key material menggunakan HKDF
+        val keyMaterial = Hkdf.derive(salt, ikm, info, kExportedKeySize)
+        
+        Log.d(TAG, "HKDF key material generated (${keyMaterial.size} bytes)")
+        
+        // Password untuk PairingContext adalah keyMaterial yang sudah di-derive
+        val passwordBytes = keyMaterial
 
         Log.d(TAG, "Creating pairing context...")
         
