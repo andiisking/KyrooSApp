@@ -106,11 +106,11 @@ class MainActivity : AppCompatActivity() {
             try {
                 Log.d("Grant", "🚀 Granting WRITE_SECURE_SETTINGS via Shizuku...")
                 
-                // 🔥 PERBAIKAN: Casting null secara eksplisit agar Kotlin tidak membaca fungsi private
+                // 🔥 PERBAIKAN FINAL: Menggunakan emptyArray() untuk menghindari ambiguitas null di Kotlin
                 val process = Shizuku.newProcess(
                     arrayOf("pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS"), 
-                    null as Array<String>?, 
-                    null as String?
+                    emptyArray<String>(), 
+                    null
                 )
                 
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -244,8 +244,8 @@ class MainActivity : AppCompatActivity() {
         return try {
             Log.d("Shizuku", "🚀 Executing: ${cmdArray.joinToString(" ")}")
             
-            // 🔥 PERBAIKAN: Casting null secara eksplisit
-            val process = Shizuku.newProcess(cmdArray, null as Array<String>?, null as String?)
+            // 🔥 PERBAIKAN FINAL: Menggunakan emptyArray() untuk menghindari ambiguitas null di Kotlin
+            val process = Shizuku.newProcess(cmdArray, emptyArray<String>(), null)
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
