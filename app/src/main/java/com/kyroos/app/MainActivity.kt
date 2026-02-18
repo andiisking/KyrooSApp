@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
@@ -33,9 +35,10 @@ import java.util.concurrent.ConcurrentHashMap
 class MainActivity : AppCompatActivity() {
     internal lateinit var webView: WebView
     private var isReceiverRegistered = false
-    
-    // INTERNAL agar bisa diakses dari KyroosAdbInterface
     internal val activeClients = ConcurrentHashMap<String, AdbClient>()
+    
+    // Handler untuk main thread
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val pairingReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -87,6 +90,8 @@ class MainActivity : AppCompatActivity() {
         }
         
         webView.webViewClient = WebViewClient()
+        
+        // PENTING: Tambah interface SEBELUM load URL
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
         webView.loadUrl("file:///android_asset/index.html")
 
@@ -117,7 +122,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         
-        // Cleanup semua ADB clients
         activeClients.forEach { (_, client) ->
             try { client.close() } catch (_: Exception) {}
         }
@@ -200,10 +204,13 @@ class MainActivity : AppCompatActivity() {
                     startPairing()
                 } else {
                     Log.d("MainActivity", "Port $port ready")
-                    webView.evaluateJavascript(
-                        "if(window.onAdbReady) window.onAdbReady($port)", 
-                        null
-                    )
+                    // Delay sedikit agar JS siap
+                    mainHandler.postDelayed({
+                        webView.evaluateJavascript(
+                            "if(window.onAdbReady) window.onAdbReady($port)", 
+                            null
+                        )
+                    }, 500)
                 }
             }
         }
@@ -220,6 +227,25 @@ class MainActivity : AppCompatActivity() {
                 false
             }
         }
+
+    // Method untuk kirim callback ke JS dengan aman
+    fun sendJsCallback(callbackId: String, base64Result: String, isError: Boolean) {
+        mainHandler.post {
+            try {
+                // Escape single quotes
+                val safeId = callbackId.replace("'", "\\'")
+                val safeBase64 = base64Result.replace("'", "\\'")
+                
+                val js = "javascript:if(window.adbCallback){window.adbCallback('$safeId','$safeBase64',$isError)}else{console.error('adbCallback not found')}"
+                
+                webView.evaluateJavascript(js) { result ->
+                    Log.d("MainActivity", "Callback result: $result")
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Failed to send callback: ${e.message}")
+            }
+        }
+    }
 }
 
 class KyroosAdbInterface(private val activity: MainActivity) {
@@ -257,7 +283,9 @@ class KyroosAdbInterface(private val activity: MainActivity) {
         val port = prefs.getInt("paired_port", -1)
 
         if (port == -1) {
-            sendCallback(callbackId, "Error: Belum dipairing", true)
+            activity.sendJsCallback(callbackId, 
+                Base64.encodeToString("Error: Belum dipairing".toByteArray(), Base64.NO_WRAP), 
+                true)
             return
         }
 
@@ -266,11 +294,10 @@ class KyroosAdbInterface(private val activity: MainActivity) {
             var isError = false
             
             try {
-                withTimeout(20000) { // 20 detik timeout
+                withTimeout(20000) {
                     val key = AdbKey(activity, "kyroos_device") 
                     val client = AdbClient(key, port, "127.0.0.1")
                     
-                    // Simpan client untuk cleanup
                     activity.activeClients[callbackId] = client
                     
                     try {
@@ -294,9 +321,13 @@ class KyroosAdbInterface(private val activity: MainActivity) {
                 handleConnectionError(e)
             }
 
-            withContext(Dispatchers.Main) {
-                sendCallback(callbackId, result, isError)
-            }
+            // Kirim callback ke main thread
+            val base64Result = Base64.encodeToString(
+                result.toByteArray(Charsets.UTF_8), 
+                Base64.NO_WRAP
+            )
+            
+            activity.sendJsCallback(callbackId, base64Result, isError)
         }
     }
 
@@ -307,30 +338,6 @@ class KyroosAdbInterface(private val activity: MainActivity) {
             activity.runOnUiThread {
                 activity.verifyStoredPort()
             }
-        }
-    }
-
-    private fun sendCallback(callbackId: String, result: String, isError: Boolean) {
-        try {
-            // Sanitize callback ID
-            val safeId = callbackId.replace(Regex("[^a-zA-Z0-9_]"), "_")
-            
-            val base64Result = Base64.encodeToString(
-                result.toByteArray(Charsets.UTF_8), 
-                Base64.NO_WRAP or Base64.URL_SAFE
-            )
-            
-            val js = "if(window.adbCallback) window.adbCallback('$safeId', '$base64Result', $isError)"
-            
-            activity.runOnUiThread {
-                activity.webView.evaluateJavascript(js) { value ->
-                    if (value == "null") {
-                        Log.w("KyroosAdb", "Callback not handled: $safeId")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("KyroosAdb", "Send callback failed: ${e.message}")
         }
     }
 

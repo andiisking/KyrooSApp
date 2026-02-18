@@ -28,6 +28,12 @@ function cleanList(arr) {
     return [...new Set(arr)].filter(p => p && p.trim().length > 0);
 }
 
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // ================== ADB QUEUE SYSTEM (ROBUST) ==================
 
 window.adbCallbacks = {};
@@ -35,6 +41,52 @@ const adbQueue = [];
 let isAdbExecuting = false;    
 let queueLock = false;         
 let watchdogTimer = null;
+
+// CALLBACK HARUS DIDEKLARASIKAN DI GLOBAL SCOPE SEBELUM APAPUN
+window.adbCallback = function(callbackId, base64Result, isError) {
+    console.log("ADB Callback:", callbackId?.substring(0, 20), "error:", isError);
+    stopWatchdog();
+    
+    const callback = window.adbCallbacks[callbackId];
+    
+    if (callback) {
+        try {
+            let result = "";
+            if (base64Result && typeof base64Result === 'string') {
+                try {
+                    const binaryString = atob(base64Result);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    result = new TextDecoder('utf-8').decode(bytes);
+                } catch (decodeErr) {
+                    console.warn("Base64 decode failed, using raw");
+                    result = base64Result;
+                }
+            }
+            
+            console.log("Callback resolved:", callbackId?.substring(0, 20), "result length:", result.length);
+            
+            if (isError) callback.reject(result);
+            else callback.resolve(result);
+        } catch (e) {
+            console.error("Callback handler error:", e);
+            callback.resolve("");
+        }
+        delete window.adbCallbacks[callbackId];
+    } else {
+        console.warn("Callback not found:", callbackId);
+        window._lastUnhandledCallback = { id: callbackId, time: Date.now(), result: base64Result?.substring(0, 50) };
+    }
+
+    // Release locks
+    isAdbExecuting = false;
+    queueLock = false;
+    
+    // Process next dengan delay
+    setTimeout(processQueue, 100);
+};
 
 function startWatchdog() {
     if (watchdogTimer) clearTimeout(watchdogTimer);
@@ -53,45 +105,7 @@ function stopWatchdog() {
     }
 }
 
-window.adbCallback = function(callbackId, base64Result, isError) {
-    console.log("ADB Callback:", callbackId.substring(0, 20), "error:", isError);
-    stopWatchdog();
-    
-    const callback = window.adbCallbacks[callbackId];
-    
-    if (callback) {
-        try {
-            let result = "";
-            if (base64Result) {
-                const binaryString = atob(base64Result);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                result = new TextDecoder('utf-8').decode(bytes);
-            }
-            
-            if (isError) callback.reject(result);
-            else callback.resolve(result);
-        } catch (e) {
-            console.warn("Decode fallback:", e);
-            callback.resolve(base64Result || "");
-        }
-        delete window.adbCallbacks[callbackId];
-    } else {
-        console.warn("Callback not found:", callbackId);
-    }
-
-    // Release locks
-    isAdbExecuting = false;
-    queueLock = false;
-    
-    // Process next
-    setTimeout(processQueue, 50);
-};
-
 function processQueue() {
-    // Double-lock prevention
     if (queueLock || isAdbExecuting) {
         return;
     }
@@ -100,21 +114,25 @@ function processQueue() {
         return;
     }
     
-    // Acquire locks
     queueLock = true;
     isAdbExecuting = true;
     
     const task = adbQueue.shift();
     const callbackId = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
-    console.log("Queue exec [" + adbQueue.length + " left]:", task.cmd.substring(0, 40));
+    console.log("Queue exec [" + adbQueue.length + " left]:", task.cmd?.substring(0, 40));
     
     window.adbCallbacks[callbackId] = { 
-        resolve: (r) => { task.resolve(r); }, 
-        reject: (e) => { task.reject(e); } 
+        resolve: (r) => { 
+            console.log("Resolve:", callbackId?.substring(0, 20));
+            task.resolve(r); 
+        }, 
+        reject: (e) => { 
+            console.log("Reject:", callbackId?.substring(0, 20));
+            task.reject(e); 
+        } 
     };
     
-    // Check KyroosApp
     if (typeof KyroosApp === 'undefined' || !KyroosApp.executeShell) {
         console.error("KyroosApp missing!");
         isAdbExecuting = false;
@@ -145,22 +163,13 @@ async function execShell(cmd) {
         return "Error: Invalid command";
     }
 
-    // Tunggu ADB ready
-    if (!isAdbReady && typeof KyroosApp !== 'undefined') {
-        // Cek manual
-        if (KyroosApp.isPaired && KyroosApp.isPaired()) {
-            isAdbReady = true;
-        }
-    }
-
     if (typeof KyroosApp !== 'undefined' && KyroosApp.executeShell) {
         return new Promise((resolve, reject) => {
             adbQueue.push({ cmd, resolve, reject });
-            setTimeout(processQueue, 10);
+            setTimeout(processQueue, 50);
         });
     }
 
-    // Fallback KSU
     if (window.ksu && window.ksu.exec) {
         try {
             const res = await window.ksu.exec(cmd);
@@ -367,7 +376,7 @@ async function checkStatus() {
 async function toggleSigma(el) {
     try {
         if (el.checked) {
-            await execShell("nohup sh /storage/emulated/0/sigma.sh > /dev/null 2>&1 &");
+            await execShell("nohup sigma > /dev/null 2>&1 &");
         } else {
             await execShell("pkill -f sigma 2>/dev/null || true");
         }
@@ -490,12 +499,6 @@ function renderAppList(filter = '') {
     
     container.innerHTML = '';
     container.appendChild(fragment);
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 const debouncedFilter = debounce((val) => { 
@@ -727,10 +730,8 @@ async function saveKyroosConfig() {
     const devVal = cleanList(currentDevList).join(',') || "none";
 
     try {
-        // Buat direktori
         await execShell(`mkdir -p "$(dirname '${CONFIG_PATH}')" 2>/dev/null || true`);
         
-        // Simpan config
         const configContent = [
             `echo "deep=${d}" > "${CONFIG_PATH}"`,
             `echo "power=${p}" >> "${CONFIG_PATH}"`,
@@ -744,7 +745,6 @@ async function saveKyroosConfig() {
 
         await execShell(configContent);
 
-        // Apply settings
         if (angleVal !== "none") {
             await execShell(`settings put global angle_gl_driver_selection_pkgs "${angleVal}"`);
             await execShell(`settings put global angle_gl_driver_selection_values "${angleVal.split(',').map(() => 'angle').join(',')}"`);
@@ -977,25 +977,36 @@ async function runOpapsConfirmed() {
 // ================== INIT ==================
 window.onload = async function () {
     console.log("=== KyrooS Initializing ===");
+    console.log("adbCallback defined:", typeof window.adbCallback);
     
     // Tunggu WebView interface siap
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 1000));
     
-    // Cek KyroosApp
+    // Cek KyroosApp dengan retry
     let retries = 0;
-    while (typeof KyroosApp === 'undefined' && retries < 10) {
+    while (typeof KyroosApp === 'undefined' && retries < 20) {
         console.log("Waiting for KyroosApp...", retries);
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 300));
         retries++;
     }
     
     if (typeof KyroosApp === 'undefined') {
         console.error("KyroosApp not found after retries!");
-        alert("Error: ADB interface not available");
+        const statusEl = document.getElementById('statusTitle');
+        if (statusEl) statusEl.innerText = "ADB Error";
         return;
     }
     
-    console.log("KyroosApp ready");
+    console.log("KyroosApp ready, executeShell:", typeof KyroosApp.executeShell);
+    
+    // Test ADB dengan perintah simple
+    try {
+        console.log("Testing ADB...");
+        const test = await execShell("echo 'ADB_TEST'");
+        console.log("ADB test result:", test.trim());
+    } catch (e) {
+        console.error("ADB test failed:", e);
+    }
     
     const appConfig = localStorage.getItem('advAppConfig') === 'true';
     const appConfigSw = document.getElementById('appConfigSwitch');
@@ -1017,7 +1028,7 @@ window.onload = async function () {
         console.error("✗ Home data:", e);
     }
     
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 500));
     
     try {
         await loadConfig();
@@ -1026,7 +1037,7 @@ window.onload = async function () {
         console.error("✗ Config:", e);
     }
     
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 500));
     
     try {
         await fetchCurrentRes();
