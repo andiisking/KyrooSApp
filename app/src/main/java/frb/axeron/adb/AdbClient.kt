@@ -182,6 +182,9 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
     }
 }
 
+/**
+ * Kelas untuk menangani stream ADB yang sudah diperbaiki agar dapat membaca semua chunk.
+ */
 class AdbStream(
     private val client: AdbClient,
     private val localId: Int,
@@ -189,26 +192,59 @@ class AdbStream(
 ) : Closeable {
     
     private var closed = false
+    private val receivedChunks = mutableListOf<ByteArray>()
 
+    /**
+     * Membaca semua data dari stream hingga ditutup oleh remote.
+     * Menggabungkan semua chunk yang diterima.
+     */
     fun readAll(): ByteArray {
-        val result = mutableListOf<ByteArray>()
+        Log.d(TAG, "readAll started for stream localId=$localId, remoteId=$remoteId")
         
-        while (!closed) {
-            val chunk = read() ?: break
-            result.add(chunk)
+        // Loop hingga stream ditutup
+        while (true) {
+            val message = client.read()
+            when (message.command) {
+                A_WRTE -> {
+                    if (message.arg0 == localId) {
+                        // Kirim ACK
+                        client.write(A_OKAY, localId, remoteId, null)
+                        
+                        // Simpan data jika ada
+                        if (message.data != null && message.data.isNotEmpty()) {
+                            receivedChunks.add(message.data)
+                            Log.d(TAG, "Received chunk: ${message.data.size} bytes")
+                        }
+                    }
+                }
+                A_CLSE -> {
+                    // Stream ditutup oleh remote, keluar dari loop
+                    Log.d(TAG, "Stream closed by remote, total chunks: ${receivedChunks.size}")
+                    closed = true
+                    break
+                }
+                else -> {
+                    Log.w(TAG, "Unexpected command in readAll: ${message.command}")
+                }
+            }
         }
         
-        val totalSize = result.sumOf { it.size }
+        // Gabungkan semua chunk
+        val totalSize = receivedChunks.sumOf { it.size }
         val output = ByteArray(totalSize)
         var offset = 0
-        for (chunk in result) {
+        for (chunk in receivedChunks) {
             chunk.copyInto(output, offset)
             offset += chunk.size
         }
         
+        Log.d(TAG, "readAll complete: $totalSize bytes")
         return output
     }
 
+    /**
+     * Membaca satu chunk (untuk penggunaan bertahap, tidak direkomendasikan untuk shell command).
+     */
     fun read(): ByteArray? {
         if (closed) return null
         
