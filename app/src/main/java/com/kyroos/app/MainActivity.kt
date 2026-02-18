@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
                 if (isShizukuPermissionGranted) {
                     Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this, "❌ Shizuku Denied - Aplikasi tidak bisa mengubah settings", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "❌ Shizuku Denied", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -164,14 +164,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // ========== EKSEKUSI SHELL DENGAN SHIZUKU UNTUK SEMUA ==========
+    // ========== EKSEKUSI SHELL ==========
     
     fun executeShell(command: String, callbackId: String) {
         Thread {
             try {
                 val result = when {
                     command.startsWith("wm size") -> getWmSizeFromDisplay()
-                    else -> executeWithPrivilege(command)
+                    else -> executeCommand(command)
                 }
                 
                 runOnUiThread {
@@ -193,18 +193,18 @@ class MainActivity : AppCompatActivity() {
         return "Physical size: ${metrics.widthPixels}x${metrics.heightPixels}"
     }
     
-    private fun executeWithPrivilege(command: String): String {
+    // 🔥 UBAH dari private menjadi internal biar bisa diakses
+    internal fun executeCommand(command: String): String {
         // Cek apakah Shizuku tersedia
         if (!isShizukuAvailable || !isShizukuPermissionGranted) {
             return "Error: Shizuku tidak tersedia atau izin belum diberikan"
         }
         
         return try {
-            Log.d("Shizuku", "🚀 Executing with Shizuku: $command")
+            Log.d("Shizuku", "🚀 Executing: $command")
             
-            // Gunakan ProcessBuilder melalui shell dengan sh -c
-            val fullCommand = "sh -c \"$command\""
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", fullCommand))
+            // Eksekusi command
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
@@ -232,7 +232,7 @@ class MainActivity : AppCompatActivity() {
             
         } catch (e: Exception) {
             Log.e("Shizuku", "❌ Error: ${e.message}")
-            "Shizuku error: ${e.message}"
+            "Error: ${e.message}"
         }
     }
     
@@ -240,7 +240,7 @@ class MainActivity : AppCompatActivity() {
         return if (command.startsWith("wm size")) {
             getWmSizeFromDisplay()
         } else {
-            executeWithPrivilege(command)
+            executeCommand(command)
         }
     }
     
@@ -272,5 +272,5 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface fun getShizukuStatus(): String = activity.getShizukuStatus()
     @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
     @JavascriptInterface fun isStorageGranted(): Boolean = activity.isStorageGranted()
-    @JavascriptInterface fun testShizuku(): String = activity.executeWithPrivilege("echo 'Shizuku is working' && id")
+    @JavascriptInterface fun testShizuku(): String = activity.executeCommand("echo 'Shizuku is working' && id")
 }
