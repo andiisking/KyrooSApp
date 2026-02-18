@@ -39,7 +39,6 @@ jobs:
           gradle-version: '8.4'
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      # ===== HANYA GENERATE WRAPPER JIKA BELUM ADA =====
       - name: Check and Generate Gradle Wrapper
         run: |
           if [ ! -f "gradlew" ]; then
@@ -57,34 +56,37 @@ jobs:
           curl -s -I https://jitpack.io | head -n 1
 
       - name: Build Debug APK
+        id: build
         run: ./gradlew assembleDebug --stacktrace
+        # TIDAK PAKAI continue-on-error, biar gagal dan tercatat
 
-      - name: Get APK Info
-        id: apk_info
-        run: |
-          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
-          if [ -f "$APK_PATH" ]; then
-            APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-            COMMIT_HASH=$(git rev-parse --short HEAD)
-            
-            echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-            echo "apk_name=KyrooS-Debug" >> $GITHUB_OUTPUT
-            echo "apk_size=$APK_SIZE" >> $GITHUB_OUTPUT
-            echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: KyrooS-Debug-${{ steps.apk_info.outputs.commit_hash }}
-          path: ${{ steps.apk_info.outputs.apk_path }}
-          if-no-files-found: error
-          retention-days: 30
-
+      # ===== UPLOAD REPORT JIKA GAGAL =====
       - name: Upload Build Reports (if failed)
-        if: failure()
+        if: always() && steps.build.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: build-reports-${{ github.sha }}
-          path: app/build/reports/
+          path: |
+            app/build/reports/
+            app/build/outputs/logs/
+            app/build/outputs/lint-results-debug.xml
           retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload APK Artifact (if success)
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: KyrooS-Debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Build Status Notification
+        if: always()
+        run: |
+          if [[ "${{ steps.build.outcome }}" == "success" ]]; then
+            echo "🎉 Build berhasil!"
+          else
+            echo "❌ Build gagal!"
+            echo "📝 Cek build reports di artifacts"
+          fi

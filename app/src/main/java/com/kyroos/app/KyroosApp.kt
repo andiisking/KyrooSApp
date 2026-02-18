@@ -8,7 +8,6 @@ import com.topjohnwu.superuser.Shell.Initializer
 class KyroosApp : Application() {
     
     companion object {
-        // Static agar bisa diakses dari mana saja
         lateinit var instance: KyroosApp
             private set
     }
@@ -18,11 +17,11 @@ class KyroosApp : Application() {
         instance = this
         
         // Setup Shell untuk menggunakan Shizuku
-        Shell.Config.setFlags(Shell.FLAG_USE_SHIZUKU)
-        Shell.Config.setInitializers(KyroosInitializer::class.java)
-        
-        // Set timeout untuk shell (10 detik)
-        Shell.Config.setTimeout(10)
+        Shell.enableVerboseLogging = false  // Ganti Config.setFlags
+        Shell.setDefaultBuilder(Shell.Builder.create()
+            .setFlags(Shell.FLAG_USE_SHIZUKU)
+            .setInitializers(KyroosInitializer::class.java)
+        )
     }
     
     class KyroosInitializer : Initializer() {

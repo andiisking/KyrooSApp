@@ -23,25 +23,21 @@ import rikka.shizuku.Shizuku
 
 class MainActivity : AppCompatActivity() {
     
-    internal lateinit var webView: WebView
+    internal lateinit var webView: WebView  // ← UBAH ke internal
     
-    // Shizuku permission request code
-    private val SHIZUKU_PERMISSION_CODE = 1001
+    internal val SHIZUKU_PERMISSION_CODE = 1001  // ← UBAH ke internal val
     
-    // Status Shizuku
-    private var isShizukuAvailable = false
-    private var isShizukuPermissionGranted = false
+    internal var isShizukuAvailable = false  // ← UBAH ke internal var
+    internal var isShizukuPermissionGranted = false  // ← UBAH ke internal var
     
-    // Listener untuk hasil permission Shizuku
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
             isShizukuPermissionGranted = grantResult == PackageManager.PERMISSION_GRANTED
             runOnUiThread {
                 if (isShizukuPermissionGranted) {
                     Toast.makeText(this, "✅ Shizuku permission granted!", Toast.LENGTH_SHORT).show()
-                    // Kirim status ke WebView
                     webView.evaluateJavascript(
-                        "if(window.onShizukuStatus) window.onShizukuStatus('granted')",
+                        "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
                         null
                     )
                 } else {
@@ -59,14 +55,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Inisialisasi WebView
         webView = findViewById(R.id.webView)
         setupWebView()
         
-        // Cek permission notifikasi (untuk Android 13+)
         checkNotificationPermission()
-        
-        // Setup Shizuku
         setupShizuku()
     }
     
@@ -82,7 +74,6 @@ class MainActivity : AppCompatActivity() {
             loadsImagesAutomatically = true
         }
         
-        // WebChromeClient untuk console.log
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 Log.d("Kyroos_WebView", "${message.message()} (${message.lineNumber()})")
@@ -91,28 +82,20 @@ class MainActivity : AppCompatActivity() {
         }
         
         webView.webViewClient = WebViewClient()
-        
-        // Tambahkan JavaScript interface
         webView.addJavascriptInterface(KyroosShellInterface(this), "KyroosApp")
-        
-        // Load HTML dari assets
         webView.loadUrl("file:///android_asset/index.html")
     }
     
     override fun onResume() {
         super.onResume()
-        // Cek ulang status Shizuku setiap kali activity resume
         checkShizukuStatus()
     }
     
     override fun onDestroy() {
         super.onDestroy()
-        // Hapus listener untuk mencegah memory leak
         try {
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
-        } catch (e: Exception) {
-            // Ignore
-        }
+        } catch (e: Exception) { }
     }
 
     override fun onRequestPermissionsResult(
@@ -122,9 +105,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
-            101 -> { // Notification permission
-                // Tidak perlu action khusus
-            }
+            101 -> { } // Notification permission
         }
     }
 
@@ -141,13 +122,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // ========== SHIZUKU IMPLEMENTATION ==========
-    
     private fun setupShizuku() {
-        // Tambahkan listener permission
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-        
-        // Cek status awal
         checkShizukuStatus()
     }
     
@@ -159,13 +135,11 @@ class MainActivity : AppCompatActivity() {
             } else {
                 isShizukuAvailable = true
                 
-                // Cek permission
                 val permission = Shizuku.checkSelfPermission()
                 if (permission == PackageManager.PERMISSION_GRANTED) {
                     isShizukuPermissionGranted = true
                     onShizukuReady()
                 } else {
-                    // Minta permission
                     Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
                 }
             }
@@ -180,7 +154,6 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
             Log.e("Kyroos_Shizuku", message)
             
-            // Kirim error ke WebView
             if (::webView.isInitialized) {
                 val escapedMessage = message.replace("'", "\\'")
                 webView.evaluateJavascript(
@@ -195,8 +168,6 @@ class MainActivity : AppCompatActivity() {
         Log.d("Kyroos_Shizuku", "Shizuku ready!")
         runOnUiThread {
             Toast.makeText(this, "✅ Shizuku siap digunakan!", Toast.LENGTH_SHORT).show()
-            
-            // Kirim status ke WebView
             webView.evaluateJavascript(
                 "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
                 null
@@ -204,7 +175,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // Fungsi untuk menjalankan shell command dan mendapatkan hasil
     suspend fun executeShellCommand(command: String): Shell.Result {
         return withContext(Dispatchers.IO) {
             Shell.cmd(command).exec()
@@ -212,15 +182,12 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-// ========== JAVASCRIPT INTERFACE UNTUK SHELL ==========
-
 class KyroosShellInterface(private val activity: MainActivity) {
     
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
         Log.d("Kyroos_Shell", "Async command: $command, callbackId: $callbackId")
         
-        // Cek ketersediaan Shizuku
         if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
             activity.runOnUiThread {
                 activity.webView.evaluateJavascript(
@@ -242,7 +209,6 @@ class KyroosShellInterface(private val activity: MainActivity) {
                 }
                 
                 withContext(Dispatchers.Main) {
-                    // Escape string untuk JavaScript
                     val escapedOutput = output
                         .replace("\\", "\\\\")
                         .replace("'", "\\'")
@@ -269,13 +235,11 @@ class KyroosShellInterface(private val activity: MainActivity) {
     fun executeShellSync(command: String): String {
         Log.d("Kyroos_Shell", "Sync command: $command")
         
-        // Cek ketersediaan Shizuku
         if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
             return "Error: Shizuku tidak tersedia"
         }
 
         return try {
-            // Jalankan secara blocking (hati-hati untuk command panjang)
             val result = kotlinx.coroutines.runBlocking {
                 activity.executeShellCommand(command)
             }
@@ -324,18 +288,6 @@ class KyroosShellInterface(private val activity: MainActivity) {
             if (result.isSuccess) result.out.firstOrNull() ?: "" else ""
         } catch (e: Exception) {
             ""
-        }
-    }
-    
-    @JavascriptInterface
-    fun getDeviceInfo(): String {
-        return try {
-            val result = kotlinx.coroutines.runBlocking {
-                activity.executeShellCommand("uname -a")
-            }
-            if (result.isSuccess) result.out.joinToString("\n") else "unknown"
-        } catch (e: Exception) {
-            "unknown"
         }
     }
 }
