@@ -26,6 +26,9 @@ private const val kExportedKeySize = 64
 
 private const val kPairingPacketHeaderSize = 6
 
+/**
+ * Kelas untuk merepresentasikan informasi peer dalam proses pairing
+ */
 private class PeerInfo(
     val type: Byte,
     data: ByteArray
@@ -67,6 +70,9 @@ private class PeerInfo(
     }
 }
 
+/**
+ * Kelas untuk header packet pairing
+ */
 private class PairingPacketHeader(
     val version: Byte,
     val type: Byte,
@@ -120,6 +126,9 @@ private class PairingPacketHeader(
     }
 }
 
+/**
+ * Kelas native untuk konteks pairing (SPAKE2)
+ */
 private class PairingContext private constructor(private val nativePtr: Long) {
 
     val msg: ByteArray = nativeMsg(nativePtr)
@@ -160,6 +169,9 @@ private class PairingContext private constructor(private val nativePtr: Long) {
     }
 }
 
+/**
+ * Client untuk melakukan pairing ADB wireless
+ */
 @RequiresApi(Build.VERSION_CODES.R)
 class AdbPairingClient(
     private val host: String,
@@ -183,6 +195,10 @@ class AdbPairingClient(
     private var pairingContext: PairingContext? = null
     private var state: State = State.Ready
 
+    /**
+     * Memulai proses pairing
+     * @return true jika berhasil, false jika gagal
+     */
     fun start(): Boolean {
         return try {
             Log.i(TAG, "Starting pairing process...")
@@ -210,6 +226,9 @@ class AdbPairingClient(
         }
     }
 
+    /**
+     * Setup koneksi TLS dan menghasilkan key material untuk pairing
+     */
     private fun setupTlsConnection() {
         Log.d(TAG, "Connecting to $host:$port")
         
@@ -230,31 +249,36 @@ class AdbPairingClient(
 
         val pairCodeBytes = pairCode.toByteArray(Charsets.UTF_8)
         
-        // ✅ PERBAIKAN: Gunakan metode alternatif untuk mendapatkan key material
-        val keyMaterial = try {
-            // Coba export dengan metode standar TLS
-            val session = sslSocket.session
-            val masterSecret = session.javaClass.getMethod("getMasterSecret").invoke(session) as ByteArray?
+        // ✅ METODE 1: Gunakan session ID dan pair code sebagai seed
+        val session = sslSocket.session
+        val sessionId = session.id
+        
+        Log.d(TAG, "Session ID: ${sessionId.size} bytes")
+        
+        // Gabungkan pairCode dan sessionId sebagai seed
+        val seed = pairCodeBytes + sessionId
+        val random = java.security.SecureRandom()
+        random.setSeed(seed)
+        
+        // Generate key material deterministik dari seed
+        val keyMaterial = ByteArray(kExportedKeySize)
+        random.nextBytes(keyMaterial)
+        
+        // ✅ METODE 2: Alternatif dengan HKDF jika tersedia
+        // Gunakan kombinasi dari kedua metode untuk redundansi
+        try {
+            // Coba buat key material dengan PRF sederhana
+            val mac = Mac.getInstance("HmacSHA256")
+            val tempKey = SecretKeySpec(pairCodeBytes, "HmacSHA256")
+            mac.init(tempKey)
+            val hkdfMaterial = mac.doFinal(sessionId)
             
-            if (masterSecret != null) {
-                // Gunakan HKDF untuk derive key material
-                val hmac = Mac.getInstance("HmacSHA256")
-                hmac.init(SecretKeySpec(masterSecret, "HmacSHA256"))
-                hmac.doFinal(kExportedKeyLabel.toByteArray()).copyOfRange(0, kExportedKeySize)
-            } else {
-                // Fallback ke random (tapi dengan seed dari pairCode)
-                val seed = pairCodeBytes + sslSocket.session.id
-                val random = java.security.SecureRandom()
-                random.setSeed(seed)
-                ByteArray(kExportedKeySize).apply { random.nextBytes(this) }
+            // XOR dengan keyMaterial yang sudah ada
+            for (i in 0 until minOf(keyMaterial.size, hkdfMaterial.size)) {
+                keyMaterial[i] = (keyMaterial[i] xor hkdfMaterial[i]).toByte()
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to export keying material, using fallback", e)
-            // Fallback dengan kombinasi pairCode dan session ID
-            val seed = pairCodeBytes + (sslSocket.session?.id ?: byteArrayOf())
-            val random = java.security.SecureRandom()
-            random.setSeed(seed)
-            ByteArray(kExportedKeySize).apply { random.nextBytes(this) }
+            Log.w(TAG, "HKDF fallback failed, using basic seed only", e)
         }
         
         val passwordBytes = ByteArray(pairCode.length + keyMaterial.size)
@@ -273,10 +297,16 @@ class AdbPairingClient(
         Log.d(TAG, "Setup completed, ready for SPAKE2 exchange")
     }
 
+    /**
+     * Membuat header packet
+     */
     private fun createHeader(type: PairingPacketHeader.Type, payloadSize: Int): PairingPacketHeader {
         return PairingPacketHeader(kCurrentKeyHeaderVersion, type.value, payloadSize)
     }
 
+    /**
+     * Membaca header packet dari stream
+     */
     private fun readHeader(): PairingPacketHeader? {
         val bytes = ByteArray(kPairingPacketHeaderSize)
         inputStream.readFully(bytes)
@@ -284,6 +314,9 @@ class AdbPairingClient(
         return PairingPacketHeader.readFrom(buffer)
     }
 
+    /**
+     * Menulis header dan payload ke stream
+     */
     private fun writeHeader(header: PairingPacketHeader, payload: ByteArray) {
         val buffer = ByteBuffer.allocate(kPairingPacketHeaderSize).order(ByteOrder.BIG_ENDIAN)
         header.writeTo(buffer)
@@ -294,6 +327,9 @@ class AdbPairingClient(
         Log.d(TAG, "write payload, size=${payload.size}")
     }
 
+    /**
+     * Melakukan pertukaran pesan SPAKE2
+     */
     private fun doExchangeMsgs(): Boolean {
         Log.d(TAG, "Starting SPAKE2 message exchange")
         
@@ -323,6 +359,9 @@ class AdbPairingClient(
         return ctx.initCipher(theirMessage)
     }
 
+    /**
+     * Melakukan pertukaran informasi peer
+     */
     private fun doExchangePeerInfo(): Boolean {
         Log.d(TAG, "Starting peer info exchange")
         
@@ -371,6 +410,9 @@ class AdbPairingClient(
         return true
     }
 
+    /**
+     * Menutup koneksi dan membersihkan resource
+     */
     override fun close() {
         Log.d(TAG, "Closing pairing client")
         
