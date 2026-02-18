@@ -16,10 +16,10 @@ class KyroosApp : Application() {
         super.onCreate()
         instance = this
         
-        // Setup Shell untuk menggunakan Shizuku
-        Shell.enableVerboseLogging = false  // Ganti Config.setFlags
+        // Setup Shell untuk menggunakan Shizuku - CARA BARU untuk libsu 5.2.0
+        Shell.enableVerboseLogging = false
         Shell.setDefaultBuilder(Shell.Builder.create()
-            .setFlags(Shell.FLAG_USE_SHIZUKU)
+            .setFlags(Shell.FLAG_USE_SHIZUKU)  // FLAG_USE_SHIZUKU tersedia di sini
             .setInitializers(KyroosInitializer::class.java)
         )
     }
