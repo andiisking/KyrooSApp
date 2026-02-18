@@ -1,6 +1,7 @@
 package com.kyroos.app
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -8,6 +9,9 @@ import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -23,12 +27,12 @@ import rikka.shizuku.Shizuku
 
 class MainActivity : AppCompatActivity() {
     
-    internal lateinit var webView: WebView  // ← UBAH ke internal
+    internal lateinit var webView: WebView
+    internal lateinit var context: Context
     
-    internal val SHIZUKU_PERMISSION_CODE = 1001  // ← UBAH ke internal val
-    
-    internal var isShizukuAvailable = false  // ← UBAH ke internal var
-    internal var isShizukuPermissionGranted = false  // ← UBAH ke internal var
+    internal val SHIZUKU_PERMISSION_CODE = 1001
+    internal var isShizukuAvailable = false
+    internal var isShizukuPermissionGranted = false
     
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
@@ -54,10 +58,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        webView = findViewById(R.id.webView)
-        setupWebView()
         
+        context = this
+        webView = findViewById(R.id.webView)
+        
+        setupWebView()
         checkNotificationPermission()
         setupShizuku()
     }
@@ -71,18 +76,51 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
+            
+            // SETTING UNTUK FONT ONLINE
             loadsImagesAutomatically = true
+            blockNetworkImage = false
+            blockNetworkLoads = false
+            
+            // SETTING CACHE
+            cacheMode = WebSettings.LOAD_DEFAULT
+            setAppCacheEnabled(true)
+            setAppCachePath(context.cacheDir.path)
+            
+            // SETTING LAINNYA
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
         
+        // WebViewClient untuk monitoring
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                Log.d("WebView", "Page loaded: $url")
+            }
+            
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                Log.e("WebView", "Error: ${error?.description}")
+            }
+        }
+        
+        // WebChromeClient untuk console.log
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                Log.d("Kyroos_WebView", "${message.message()} (${message.lineNumber()})")
+                Log.d("WebView", "${message.message()} (${message.lineNumber()})")
                 return true
             }
         }
         
-        webView.webViewClient = WebViewClient()
+        // Tambahkan JavaScript interface
         webView.addJavascriptInterface(KyroosShellInterface(this), "KyroosApp")
+        
+        // Load HTML dari assets
         webView.loadUrl("file:///android_asset/index.html")
     }
     
@@ -95,7 +133,9 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         try {
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
-        } catch (e: Exception) { }
+        } catch (e: Exception) {
+            // Ignore
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -121,6 +161,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+    
+    // ========== SHIZUKU IMPLEMENTATION ==========
     
     private fun setupShizuku() {
         Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
@@ -152,7 +194,7 @@ class MainActivity : AppCompatActivity() {
     private fun showShizukuError(message: String) {
         runOnUiThread {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-            Log.e("Kyroos_Shizuku", message)
+            Log.e("Shizuku", message)
             
             if (::webView.isInitialized) {
                 val escapedMessage = message.replace("'", "\\'")
@@ -165,7 +207,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun onShizukuReady() {
-        Log.d("Kyroos_Shizuku", "Shizuku ready!")
+        Log.d("Shizuku", "Shizuku ready!")
         runOnUiThread {
             Toast.makeText(this, "✅ Shizuku siap digunakan!", Toast.LENGTH_SHORT).show()
             webView.evaluateJavascript(
@@ -175,6 +217,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    // Fungsi untuk menjalankan shell command dengan libsu
     suspend fun executeShellCommand(command: String): Shell.Result {
         return withContext(Dispatchers.IO) {
             Shell.cmd(command).exec()
@@ -182,11 +225,13 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+// ========== JAVASCRIPT INTERFACE UNTUK SHELL ==========
+
 class KyroosShellInterface(private val activity: MainActivity) {
     
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
-        Log.d("Kyroos_Shell", "Async command: $command, callbackId: $callbackId")
+        Log.d("Shell", "Async command: $command, callbackId: $callbackId")
         
         if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
             activity.runOnUiThread {
@@ -233,7 +278,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
     
     @JavascriptInterface
     fun executeShellSync(command: String): String {
-        Log.d("Kyroos_Shell", "Sync command: $command")
+        Log.d("Shell", "Sync command: $command")
         
         if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
             return "Error: Shizuku tidak tersedia"
@@ -289,5 +334,32 @@ class KyroosShellInterface(private val activity: MainActivity) {
         } catch (e: Exception) {
             ""
         }
+    }
+    
+    @JavascriptInterface
+    fun getDeviceInfo(): String {
+        return try {
+            val result = kotlinx.coroutines.runBlocking {
+                activity.executeShellCommand("uname -a")
+            }
+            if (result.isSuccess) result.out.joinToString("\n") else "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
+    
+    @JavascriptInterface
+    fun clearCache() {
+        activity.runOnUiThread {
+            activity.webView.clearCache(true)
+            Toast.makeText(activity, "Cache dibersihkan", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    @JavascriptInterface
+    fun getCacheSize(): String {
+        val cacheDir = activity.cacheDir
+        val size = cacheDir?.totalSpace ?: 0
+        return "${size / 1024 / 1024} MB"
     }
 }
