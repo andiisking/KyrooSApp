@@ -84,33 +84,24 @@ body {
 /* ================== SHIZUKU CARD ================== */
 .shizuku-card {
     background-color: var(--md-surface-container);
-    border-radius: 26px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
-    border: 1px solid transparent;
-    transition: all 0.2s ease;
+    border-radius: 28px; /* Disamakan dengan .config-card */
+    padding: 20px 24px;  /* Disamakan dengan .config-card */
+    margin-bottom: 8px;  /* Disamakan dengan jarak card lainnya */
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.1s linear;
 }
 
-.shizuku-card.status-ready {
-    border-left: 4px solid var(--md-success-container);
-    background: linear-gradient(90deg, rgba(76, 175, 80, 0.08) 0%, transparent 100%);
-}
-
-.shizuku-card.status-warning {
-    border-left: 4px solid var(--md-warning-container);
-    background: linear-gradient(90deg, rgba(255, 152, 0, 0.08) 0%, transparent 100%);
-}
-
-.shizuku-card.status-error {
-    border-left: 4px solid var(--md-error);
-    background: linear-gradient(90deg, rgba(186, 26, 26, 0.08) 0%, transparent 100%);
+/* Animasi klik agar sama persis rasanya dengan card lain */
+.shizuku-card:active {
+    transform: scale(0.98);
 }
 
 .shizuku-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 16px;
     width: 100%;
 }
 
@@ -131,60 +122,60 @@ body {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    transition: background-color 0.2s ease;
 }
 
 .shizuku-icon-wrapper i {
-    font-size: 28px;
-    color: var(--md-primary);
+    font-size: 24px;
+    color: var(--md-outline);
 }
+
+/* Warna ikon berubah sesuai status (tanpa efek glow ke card) */
+.shizuku-card.status-ready .shizuku-icon-wrapper { background-color: var(--md-success-container); }
+.shizuku-card.status-ready .shizuku-icon-wrapper i { color: var(--md-on-bg); }
+
+.shizuku-card.status-warning .shizuku-icon-wrapper { background-color: var(--md-warning-container); }
+.shizuku-card.status-warning .shizuku-icon-wrapper i { color: #000; }
+
+.shizuku-card.status-error .shizuku-icon-wrapper { background-color: var(--md-error-container); }
+.shizuku-card.status-error .shizuku-icon-wrapper i { color: var(--md-on-error-container); }
 
 .shizuku-info {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .shizuku-title {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
     margin-bottom: 2px;
 }
 
 .shizuku-title span:first-child {
     font-size: 16px;
     font-weight: 600;
+    color: var(--md-on-bg);
 }
 
 .shizuku-badge {
     display: inline-flex;
     align-items: center;
-    padding: 2px 10px;
-    border-radius: 100px;
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.shizuku-badge.ready {
-    background-color: var(--md-success-container);
-    color: white;
-}
-
-.shizuku-badge.warning {
-    background-color: var(--md-warning-container);
-    color: black;
-}
-
-.shizuku-badge.error {
-    background-color: var(--md-error);
-    color: white;
-}
-
-.shizuku-badge.checking {
-    background-color: var(--md-surface-container-high);
-    color: var(--md-outline);
-}
+.shizuku-badge.ready { background-color: var(--md-success-container); color: var(--md-on-bg); }
+.shizuku-badge.warning { background-color: var(--md-warning-container); color: #000; }
+.shizuku-badge.error { background-color: var(--md-error-container); color: var(--md-on-error-container); }
+.shizuku-badge.checking { background-color: var(--md-surface-container-high); color: var(--md-outline); }
 
 .shizuku-desc {
     font-size: 13px;
@@ -192,6 +183,7 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-weight: 500;
 }
 
 .shizuku-actions {
@@ -202,32 +194,30 @@ body {
     background-color: var(--md-primary-container);
     color: var(--md-on-primary-container);
     border: none;
-    padding: 8px 16px;
-    border-radius: 100px;
+    padding: 10px 16px;
+    border-radius: 100px; /* Pill shape agar sama dengan tombol btn-apply */
     font-size: 13px;
     font-weight: 600;
     display: flex;
     align-items: center;
     gap: 6px;
     cursor: pointer;
-    white-space: nowrap;
-    transition: transform 0.1s ease, opacity 0.2s ease;
+    transition: transform 0.1s ease, opacity 0.2s;
 }
 
-.shizuku-btn i {
-    font-size: 16px;
-}
-
-.shizuku-btn:active {
-    transform: scale(0.95);
-}
+.shizuku-btn i { font-size: 16px; }
+.shizuku-btn:active { transform: scale(0.95); opacity: 0.8; }
 
 .shizuku-guide {
-    margin-top: 12px;
+    margin-top: 16px;
     padding-top: 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--md-surface-container-high); /* Garis pemisah yang kalem */
     font-size: 13px;
     color: var(--md-outline);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
 .shizuku-guide a {
@@ -240,12 +230,11 @@ body {
     padding: 4px 8px;
     border-radius: 8px;
     background-color: var(--md-surface-container-high);
-    margin-left: 4px;
+    transition: background-color 0.2s ease;
 }
 
-.shizuku-guide a i {
-    font-size: 14px;
-}
+.shizuku-guide a:active { background-color: var(--md-secondary-container); }
+
 
 /* ================== CARD STYLES ================== */
 .card, .config-card {

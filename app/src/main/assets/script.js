@@ -1,16 +1,15 @@
-// ================== KONSTANTA ==================
 const CONFIG_PATH = "/storage/emulated/0/kikiros";
 
-// Cache untuk menyimpan data aplikasi
 let allPackages = [];
 let infoCache = {};
 let currentDetailPkg = "";
 let currentAngleList = [];
 let currentGameList = [];
 let currentDevList = [];
+let opapsPackages = [];
+let selectedOpapsPkg = "";
 let isScanning = false;
 
-// ================== UTILITY FUNCTIONS ==================
 function safeJSONParse(str) { 
     try { return JSON.parse(str); } 
     catch { return []; } 
@@ -35,20 +34,19 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// ================== SHIZUKU SHELL EXECUTION ==================
 async function execShell(command) {
     return new Promise((resolve, reject) => {
         try {
             if (typeof KyroosApp === 'undefined' || !KyroosApp) {
                 updateShizukuUI('no_interface');
-                reject(new Error("KyroosApp tidak tersedia"));
+                reject(new Error("KyroosApp interface unavailable"));
                 return;
             }
 
             const shizukuStatus = KyroosApp.getShizukuStatus?.() || 'unknown';
             if (shizukuStatus !== 'ready') {
                 updateShizukuUI(shizukuStatus);
-                reject(new Error("Shizuku tidak siap: " + shizukuStatus));
+                reject(new Error("Shizuku not ready: " + shizukuStatus));
                 return;
             }
 
@@ -61,7 +59,6 @@ async function execShell(command) {
             }
             
             window.shellCallbacks[callbackId] = { resolve, reject };
-            
             KyroosApp.executeShell(command, callbackId);
             
             setTimeout(() => {
@@ -73,7 +70,7 @@ async function execShell(command) {
             }, 30000);
             
         } catch (e) {
-            console.error("Exec exception:", e);
+            console.error("Execution exception:", e);
             if (e.message?.includes('Shizuku')) {
                 updateShizukuUI('error');
             }
@@ -97,19 +94,18 @@ window.shellCallback = function(callbackId, result, isError) {
 
 function execShellSync(command) {
     if (typeof KyroosApp === 'undefined' || !KyroosApp) {
-        return "Error: KyroosApp tidak tersedia";
+        return "Error: KyroosApp interface unavailable";
     }
     
     try {
         console.log("Exec sync:", command);
         return KyroosApp.executeShellSync(command);
     } catch (e) {
-        console.error("Sync exec error:", e);
+        console.error("Sync execution error:", e);
         return "Error: " + e.message;
     }
 }
 
-// ================== SHIZUKU UI ==================
 async function checkShizukuStatus() {
     try {
         if (typeof KyroosApp === 'undefined' || !KyroosApp) {
@@ -119,7 +115,6 @@ async function checkShizukuStatus() {
         
         const status = KyroosApp.getShizukuStatus();
         const available = KyroosApp.isShizukuAvailable();
-        
         updateShizukuUI(status);
         
         return { available, status };
@@ -146,7 +141,7 @@ function updateShizukuUI(status) {
             card.classList.add('status-ready');
             badge.className = 'shizuku-badge ready';
             badge.innerHTML = '● Ready';
-            desc.innerHTML = 'Shizuku aktif dan siap digunakan';
+            desc.innerHTML = 'Shizuku is active and ready';
             actions.innerHTML = '';
             if (icon) icon.className = 'fas fa-check-circle';
             break;
@@ -154,11 +149,11 @@ function updateShizukuUI(status) {
         case 'no_permission':
             card.classList.add('status-warning');
             badge.className = 'shizuku-badge warning';
-            badge.innerHTML = '⚠ Izin';
-            desc.innerHTML = 'Diperlukan izin Shizuku';
+            badge.innerHTML = '⚠ Permission';
+            desc.innerHTML = 'Shizuku permission required';
             actions.innerHTML = `
                 <button class="shizuku-btn" onclick="requestShizukuPermission()">
-                    <i class="fas fa-shield-alt"></i> Beri Izin
+                    <i class="fas fa-shield-alt"></i> Grant
                 </button>
             `;
             if (icon) icon.className = 'fas fa-exclamation-triangle';
@@ -167,8 +162,8 @@ function updateShizukuUI(status) {
         case 'not_installed':
             card.classList.add('status-error');
             badge.className = 'shizuku-badge error';
-            badge.innerHTML = '✗ Tidak Ada';
-            desc.innerHTML = 'Shizuku tidak terinstall';
+            badge.innerHTML = '✗ Missing';
+            desc.innerHTML = 'Shizuku is not installed';
             actions.innerHTML = `
                 <button class="shizuku-btn" onclick="openShizukuDownload()">
                     <i class="fas fa-download"></i> Install
@@ -181,7 +176,7 @@ function updateShizukuUI(status) {
                 guide.id = 'shizukuGuide';
                 guide.className = 'shizuku-guide';
                 guide.innerHTML = `
-                    Download dari 
+                    Download from 
                     <a href="#" onclick="openShizukuDownloadLink()">
                         <i class="fas fa-external-link-alt"></i> rikka.app
                     </a>
@@ -196,7 +191,7 @@ function updateShizukuUI(status) {
             card.classList.add('status-error');
             badge.className = 'shizuku-badge error';
             badge.innerHTML = '✗ Error';
-            desc.innerHTML = 'Gagal terhubung ke Shizuku';
+            desc.innerHTML = 'Failed to connect to Shizuku';
             actions.innerHTML = '';
             if (icon) icon.className = 'fas fa-exclamation-circle';
             
@@ -213,7 +208,7 @@ function requestShizukuPermission() {
         const btn = document.querySelector('#shizukuActions .shizuku-btn');
         if (btn) {
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Meminta...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
             btn.disabled = true;
             
             setTimeout(() => {
@@ -234,7 +229,6 @@ function openShizukuDownloadLink() {
     return false;
 }
 
-// ================== NAVIGASI ==================
 function switchTab(tabId) {
     document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -244,18 +238,22 @@ function switchTab(tabId) {
 }
 
 function toggleAppConfig(el) {
-    const on = el.checked;
-    localStorage.setItem('advAppConfig', on);
+    const isEnabled = el.checked;
+    localStorage.setItem('advAppConfig', isEnabled);
     const nav = document.getElementById('mainNav');
     const btn = document.getElementById('nav-apps');
-    if (on) { 
+    
+    if (isEnabled) { 
         btn.classList.remove('hidden-tab'); 
         nav.classList.add('wide'); 
     } else { 
         btn.classList.add('hidden-tab'); 
         nav.classList.remove('wide'); 
     }
-    if (!on && document.getElementById('apps').classList.contains('active')) switchTab('home');
+    
+    if (!isEnabled && document.getElementById('apps').classList.contains('active')) {
+        switchTab('home');
+    }
 }
 
 function openConfigPage() { 
@@ -294,7 +292,6 @@ async function openTgLink(url) {
     }
 }
 
-// ================== DETAIL APLIKASI ==================
 function openAppDetail(pkg) {
     currentDetailPkg = pkg;
     const cache = infoCache[pkg] || {};
@@ -322,7 +319,6 @@ function closeAppDetail() {
     document.getElementById('mainNav').classList.remove('hidden');
 }
 
-// ================== HOME ==================
 async function updateHomeData() {
     try {
         let chip = await execShell("getprop ro.board.platform").catch(() => "");
@@ -357,19 +353,19 @@ async function updateHomeData() {
 async function checkStatus() {
     try {
         const pid = await execShell("pgrep -f sigma").catch(() => "");
-        const isRun = pid && pid.trim().length > 0 && !pid.includes("Error");
-        document.getElementById('sigmaSwitch').checked = isRun;
+        const isRunning = pid && pid.trim().length > 0 && !pid.includes("Error");
+        document.getElementById('sigmaSwitch').checked = isRunning;
 
         const card = document.getElementById('statusCard');
         const icon = document.querySelector('#statusIcon i');
         const title = document.getElementById('statusTitle');
         const desc = document.getElementById('statusDesc');
 
-        if (isRun) {
+        if (isRunning) {
             card.classList.add('active-mode');
             if (icon) icon.className = 'fas fa-check-circle';
             title.innerText = 'Kyroos Active';
-            desc.innerText = 'Sigma binary running';
+            desc.innerText = 'Sigma binary is running';
         } else {
             card.classList.remove('active-mode');
             if (icon) icon.className = 'fas fa-hourglass-half';
@@ -396,7 +392,6 @@ async function toggleSigma(el) {
     }
 }
 
-// ================== APPS LIST ==================
 async function startAppScan() {
     if (isScanning) return;
     isScanning = true;
@@ -407,8 +402,7 @@ async function startAppScan() {
     container.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading list...</div>';
 
     try {
-        const raw = await execShell("cmd package list packages -u").catch(() => "");
-        
+        const raw = await execShell("cmd package list packages -3 -u").catch(() => "");
         let rawList = [];
         
         if (raw && raw.includes("package:")) {
@@ -491,17 +485,16 @@ const debouncedFilter = debounce((val) => {
     if (allPackages.length > 0) renderAppList(val); 
 }, 300);
 
-// ================== KONFIGURASI ==================
 function checkInterlock() {
-    const auto = document.getElementById('powerSwitch').checked;
-    const custom = document.getElementById('customSaveSwitch').checked;
+    const autoEnabled = document.getElementById('powerSwitch').checked;
+    const customEnabled = document.getElementById('customSaveSwitch').checked;
 
     const autoCard = document.getElementById('autoPowerCard');
     const customCard = document.getElementById('customPowerCard');
     const autoSw = document.getElementById('powerSwitch');
     const customSw = document.getElementById('customSaveSwitch');
 
-    if (auto) {
+    if (autoEnabled) {
         customCard.classList.add('disabled-state');
         customSw.disabled = true;
     } else {
@@ -509,7 +502,7 @@ function checkInterlock() {
         customSw.disabled = false;
     }
 
-    if (custom) {
+    if (customEnabled) {
         autoCard.classList.add('disabled-state');
         autoSw.disabled = true;
     } else {
@@ -602,7 +595,7 @@ async function fetchCurrentRes() {
             document.getElementById('resW').value = sizeMatch[1];
             document.getElementById('resH').value = sizeMatch[2];
         }
-    } catch (e) { }
+    } catch (e) {}
 }
 
 function toggleResUI(el) {
@@ -697,30 +690,30 @@ async function saveKyroosConfig() {
 
 async function loadConfig() {
     try {
-        const c = await execShell(`cat ${CONFIG_PATH}`).catch(() => "");
-        if (c && !c.includes("No such file") && c.length > 0) {
-            document.getElementById('deepSwitch').checked = c.includes('deep=on');
-            document.getElementById('powerSwitch').checked = c.includes('power=on');
-            document.getElementById('cacheSwitch').checked = c.includes('chace=on');
-            document.getElementById('brutalSwitch').checked = c.includes('brutal=on');
+        const configContent = await execShell(`cat ${CONFIG_PATH}`).catch(() => "");
+        if (configContent && !configContent.includes("No such file") && configContent.length > 0) {
+            document.getElementById('deepSwitch').checked = configContent.includes('deep=on');
+            document.getElementById('powerSwitch').checked = configContent.includes('power=on');
+            document.getElementById('cacheSwitch').checked = configContent.includes('chace=on');
+            document.getElementById('brutalSwitch').checked = configContent.includes('brutal=on');
 
-            const matchS = c.match(/cossave=(\w+)/);
-            if (matchS && matchS[1] !== 'off') {
+            const customMatch = configContent.match(/cossave=(\w+)/);
+            if (customMatch && customMatch[1] !== 'off') {
                 document.getElementById('customSaveSwitch').checked = true;
                 document.getElementById('customSaveContainer').classList.add('show');
-                document.getElementById('customSaveValue').value = matchS[1];
+                document.getElementById('customSaveValue').value = customMatch[1];
             } else {
                 document.getElementById('customSaveSwitch').checked = false;
             }
 
-            const matchA = c.match(/angle=([^\n]+)/);
-            currentAngleList = matchA && matchA[1] !== 'none' ? matchA[1].split(',') : [];
+            const angleMatch = configContent.match(/angle=([^\n]+)/);
+            currentAngleList = angleMatch && angleMatch[1] !== 'none' ? angleMatch[1].split(',') : [];
 
-            const matchG = c.match(/game=([^\n]+)/);
-            currentGameList = matchG && matchG[1] !== 'none' ? matchG[1].split(',') : [];
+            const gameMatch = configContent.match(/game=([^\n]+)/);
+            currentGameList = gameMatch && gameMatch[1] !== 'none' ? gameMatch[1].split(',') : [];
 
-            const matchD = c.match(/dev=([^\n]+)/);
-            currentDevList = matchD && matchD[1] !== 'none' ? matchD[1].split(',') : [];
+            const devMatch = configContent.match(/dev=([^\n]+)/);
+            currentDevList = devMatch && devMatch[1] !== 'none' ? devMatch[1].split(',') : [];
 
             checkInterlock();
         }
@@ -728,10 +721,6 @@ async function loadConfig() {
         console.error("Load config error:", e);
     }
 }
-
-// ================== OPAPS ==================
-let opapsPackages = [];
-let selectedOpapsPkg = "";
 
 function openOpapsPage() {
     document.getElementById('opapsPage').classList.add('open');
@@ -755,7 +744,6 @@ async function startOpapsScan() {
 
     try {
         const raw = await execShell("cmd package list packages -3 -u").catch(() => "");
-        
         let rawList = [];
         
         if (raw && raw.includes("package:")) {
@@ -868,11 +856,11 @@ async function runOpapsConfirmed() {
     closeOpapsPage();
 }
 
-// ================== INIT ==================
 window.onload = function () {
-    const appConfig = localStorage.getItem('advAppConfig') === 'true';
-    document.getElementById('appConfigSwitch').checked = appConfig;
-    if (appConfig) {
+    const appConfigEnabled = localStorage.getItem('advAppConfig') === 'true';
+    document.getElementById('appConfigSwitch').checked = appConfigEnabled;
+    
+    if (appConfigEnabled) {
         document.getElementById('nav-apps').classList.remove('hidden-tab');
         document.getElementById('mainNav').classList.add('wide');
     }
