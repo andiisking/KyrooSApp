@@ -39,10 +39,6 @@ class MainActivity : AppCompatActivity() {
                         "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
                         null
                     )
-                    
-                    // Test shell setelah izin diberikan
-                    testShell()
-                    
                 } else {
                     Toast.makeText(this, "❌ Shizuku Denied", Toast.LENGTH_LONG).show()
                 }
@@ -75,7 +71,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
             
-            // JANGAN BLOCK NETWORK
+            // PENTING: Jangan block network!
             blockNetworkImage = false
             blockNetworkLoads = false
             cacheMode = WebSettings.LOAD_DEFAULT
@@ -127,8 +123,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // ========== SHIZUKU IMPLEMENTATION ==========
-    
     private fun setupShizuku() {
         try {
             Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
@@ -173,14 +167,48 @@ class MainActivity : AppCompatActivity() {
         Log.d("Shizuku", "✅ Shizuku ready!")
         runOnUiThread {
             Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
+            webView.evaluateJavascript(
+                "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
+                null
+            )
         }
     }
     
-    // ========== SHELL EXECUTION (RUNTIME) ==========
+    // ========== SHELL EXECUTION ==========
+    // Fungsi ini DIPANGGIL oleh JavaScript via interface
     
-    fun executeShellCommand(command: String): String {
-        Log.d("Shell", "Executing: $command")
+    fun executeShell(command: String, callbackId: String) {
+        Log.d("Shell", "Executing async: $command, callbackId: $callbackId")
         
+        Thread {
+            try {
+                val result = executeShellCommand(command)
+                
+                runOnUiThread {
+                    val escaped = result
+                        .replace("\\", "\\\\")
+                        .replace("'", "\\'")
+                        .replace("\n", "\\n")
+                        .replace("\r", "\\r")
+                    
+                    val jsCode = "window.shellCallback('$callbackId', '$escaped', false)"
+                    webView.evaluateJavascript(jsCode, null)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    val jsCode = "window.shellCallback('$callbackId', 'Error: ${e.message}', true)"
+                    webView.evaluateJavascript(jsCode, null)
+                }
+            }
+        }.start()
+    }
+    
+    fun executeShellSync(command: String): String {
+        Log.d("Shell", "Executing sync: $command")
+        return executeShellCommand(command)
+    }
+    
+    private fun executeShellCommand(command: String): String {
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
             
@@ -209,86 +237,63 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun testShell() {
-        Thread {
-            try {
-                val result = executeShellCommand("echo 'Shell working!' && getprop ro.product.model")
-                Log.d("ShellTest", "Result: $result")
-                
-                runOnUiThread {
-                    Toast.makeText(this, "✅ Shell OK: $result", Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                Log.e("ShellTest", "Failed", e)
+    // ========== FUNGSI YANG DIPANGGIL JS ==========
+    
+    fun isShizukuAvailable(): Boolean {
+        return isShizukuAvailable && isShizukuPermissionGranted
+    }
+    
+    fun getShizukuStatus(): String {
+        return when {
+            !isShizukuAvailable -> "not_installed"
+            !isShizukuPermissionGranted -> "no_permission"
+            else -> "ready"
+        }
+    }
+    
+    fun requestShizukuPermission() {
+        runOnUiThread {
+            if (!isShizukuAvailable) {
+                Toast.makeText(this, "Shizuku not running", Toast.LENGTH_SHORT).show()
+            } else if (!isShizukuPermissionGranted) {
+                Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
             }
-        }.start()
+        }
     }
 }
 
 // ========== JAVASCRIPT INTERFACE ==========
+// Class ini menghubungkan JavaScript ke fungsi-fungsi di atas
 
 class KyroosShellInterface(private val activity: MainActivity) {
     
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
-        Log.d("JSInterface", "Async: $command")
-        
-        Thread {
-            try {
-                val result = activity.executeShellCommand(command)
-                
-                activity.runOnUiThread {
-                    val escaped = result
-                        .replace("\\", "\\\\")
-                        .replace("'", "\\'")
-                        .replace("\n", "\\n")
-                        .replace("\r", "\\r")
-                    
-                    val jsCode = "window.shellCallback('$callbackId', '$escaped', false)"
-                    activity.webView.evaluateJavascript(jsCode, null)
-                }
-            } catch (e: Exception) {
-                activity.runOnUiThread {
-                    val jsCode = "window.shellCallback('$callbackId', 'Error: ${e.message}', true)"
-                    activity.webView.evaluateJavascript(jsCode, null)
-                }
-            }
-        }.start()
+        activity.executeShell(command, callbackId)
     }
     
     @JavascriptInterface
     fun executeShellSync(command: String): String {
-        Log.d("JSInterface", "Sync: $command")
-        return activity.executeShellCommand(command)
+        return activity.executeShellSync(command)
     }
     
     @JavascriptInterface
     fun isShizukuAvailable(): Boolean {
-        return activity.isShizukuAvailable && activity.isShizukuPermissionGranted
+        return activity.isShizukuAvailable()
     }
     
     @JavascriptInterface
     fun getShizukuStatus(): String {
-        return when {
-            !activity.isShizukuAvailable -> "not_installed"
-            !activity.isShizukuPermissionGranted -> "no_permission"
-            else -> "ready"
-        }
+        return activity.getShizukuStatus()
     }
     
     @JavascriptInterface
     fun requestShizukuPermission() {
-        activity.runOnUiThread {
-            if (!activity.isShizukuAvailable) {
-                Toast.makeText(activity, "Shizuku not running", Toast.LENGTH_SHORT).show()
-            } else if (!activity.isShizukuPermissionGranted) {
-                Shizuku.requestPermission(activity.SHIZUKU_PERMISSION_CODE)
-            }
-        }
+        activity.requestShizukuPermission()
     }
     
     @JavascriptInterface
     fun testShell(): String {
-        return activity.executeShellCommand("echo 'JS interface working!'")
+        return activity.executeShellSync("echo 'JS interface working!'")
     }
 }
