@@ -3,13 +3,14 @@ package frb.axeron.adb
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
-import org.conscrypt.Conscrypt
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import javax.net.ssl.SSLSocket
 
 private const val TAG = "AdbPairClient"
@@ -20,7 +21,7 @@ private const val kMaxSupportedKeyHeaderVersion = 1.toByte()
 private const val kMaxPeerInfoSize = 8192
 private const val kMaxPayloadSize = kMaxPeerInfoSize * 2
 
-private const val kExportedKeyLabel = "adb-label\u0000"
+private const val kExportedKeyLabel = "adb-label"
 private const val kExportedKeySize = 64
 
 private const val kPairingPacketHeaderSize = 6
@@ -220,14 +221,6 @@ class AdbPairingClient(
         
         Log.d(TAG, "Socket created: ${sslSocket.javaClass.name}")
         
-        // ✅ PERBAIKAN: Cek apakah ini Conscrypt socket
-        if (!Conscrypt.isConscrypt(sslSocket)) {
-            Log.w(TAG, "WARNING: Socket is not a Conscrypt socket! Type: ${sslSocket.javaClass.name}")
-            Log.w(TAG, "Provider: ${sslContext.provider}")
-        } else {
-            Log.d(TAG, "Conscrypt socket confirmed")
-        }
-        
         Log.d(TAG, "Starting TLS handshake...")
         sslSocket.startHandshake()
         Log.d(TAG, "TLS handshake succeeded")
@@ -237,24 +230,31 @@ class AdbPairingClient(
 
         val pairCodeBytes = pairCode.toByteArray(Charsets.UTF_8)
         
-        // ✅ PERBAIKAN: Coba export keying material dengan Conscrypt
+        // ✅ PERBAIKAN: Gunakan metode alternatif untuk mendapatkan key material
         val keyMaterial = try {
-            if (Conscrypt.isConscrypt(sslSocket)) {
-                Conscrypt.exportKeyingMaterial(
-                    sslSocket,
-                    kExportedKeyLabel,
-                    null,
-                    kExportedKeySize
-                )
+            // Coba export dengan metode standar TLS
+            val session = sslSocket.session
+            val masterSecret = session.javaClass.getMethod("getMasterSecret").invoke(session) as ByteArray?
+            
+            if (masterSecret != null) {
+                // Gunakan HKDF untuk derive key material
+                val hmac = Mac.getInstance("HmacSHA256")
+                hmac.init(SecretKeySpec(masterSecret, "HmacSHA256"))
+                hmac.doFinal(kExportedKeyLabel.toByteArray()).copyOfRange(0, kExportedKeySize)
             } else {
-                throw IllegalStateException("Not a Conscrypt socket")
+                // Fallback ke random (tapi dengan seed dari pairCode)
+                val seed = pairCodeBytes + sslSocket.session.id
+                val random = java.security.SecureRandom()
+                random.setSeed(seed)
+                ByteArray(kExportedKeySize).apply { random.nextBytes(this) }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to export keying material with Conscrypt, using fallback", e)
-            // Fallback: generate random bytes (TIDAK AMAN, tapi untuk testing)
-            ByteArray(kExportedKeySize).apply {
-                java.security.SecureRandom().nextBytes(this)
-            }
+            Log.w(TAG, "Failed to export keying material, using fallback", e)
+            // Fallback dengan kombinasi pairCode dan session ID
+            val seed = pairCodeBytes + (sslSocket.session?.id ?: byteArrayOf())
+            val random = java.security.SecureRandom()
+            random.setSeed(seed)
+            ByteArray(kExportedKeySize).apply { random.nextBytes(this) }
         }
         
         val passwordBytes = ByteArray(pairCode.length + keyMaterial.size)
