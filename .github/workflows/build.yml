@@ -36,11 +36,20 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: wrapper
+          gradle-version: '8.4'
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      # ===== HANYA GENERATE WRAPPER JIKA BELUM ADA =====
+      - name: Check and Generate Gradle Wrapper
+        run: |
+          if [ ! -f "gradlew" ]; then
+            echo "📦 gradlew not found. Generating wrapper..."
+            gradle wrapper --gradle-version 8.4
+            chmod +x gradlew
+          else
+            echo "✅ gradlew already exists"
+            chmod +x gradlew
+          fi
 
       - name: Check Dependencies (JitPack)
         run: |
@@ -54,18 +63,15 @@ jobs:
         id: apk_info
         run: |
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
-          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-          COMMIT_HASH=$(git rev-parse --short HEAD)
-          
-          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "apk_name=KyrooS-Debug" >> $GITHUB_OUTPUT
-          echo "apk_size=$APK_SIZE" >> $GITHUB_OUTPUT
-          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
-          
-          echo "✅ APK Info:"
-          echo "  - Path: $APK_PATH"
-          echo "  - Size: $APK_SIZE"
-          echo "  - Commit: $COMMIT_HASH"
+          if [ -f "$APK_PATH" ]; then
+            APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            
+            echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+            echo "apk_name=KyrooS-Debug" >> $GITHUB_OUTPUT
+            echo "apk_size=$APK_SIZE" >> $GITHUB_OUTPUT
+            echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -82,17 +88,3 @@ jobs:
           name: build-reports-${{ github.sha }}
           path: app/build/reports/
           retention-days: 7
-
-      - name: Build Success Notification
-        if: success()
-        run: |
-          echo "🎉 Build berhasil!"
-          echo "📦 APK: KyrooS-Debug"
-          echo "📏 Ukuran: ${{ steps.apk_info.outputs.apk_size }}"
-          echo "🔗 Download dari Artifacts"
-
-      - name: Build Failure Notification
-        if: failure()
-        run: |
-          echo "❌ Build gagal!"
-          echo "📝 Cek build reports di artifacts"
