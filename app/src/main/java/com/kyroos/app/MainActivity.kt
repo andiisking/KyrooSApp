@@ -70,8 +70,6 @@ class MainActivity : AppCompatActivity() {
             loadsImagesAutomatically = true
             loadWithOverviewMode = true
             useWideViewPort = true
-            
-            // Izinkan network
             blockNetworkImage = false
             blockNetworkLoads = false
             cacheMode = WebSettings.LOAD_DEFAULT
@@ -170,15 +168,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // ========== EXECUTE SHELL ==========
+    // ========== FUNGSI UNTUK JS ==========
     
     fun executeShell(command: String, callbackId: String) {
         Log.d("Shell", "🚀 Executing: $command")
         
         Thread {
             try {
-                // 🔥 SEDERHANA: Langsung exec tanpa sh -c
-                val process = Runtime.getRuntime().exec(command)
+                // Handle wm command
+                val finalCommand = when {
+                    command.startsWith("wm") -> command.replace("wm", "cmd window")
+                    else -> command
+                }
+                
+                val process = Runtime.getRuntime().exec(finalCommand.split(" ").toTypedArray())
                 
                 // Baca output
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
@@ -197,15 +200,14 @@ class MainActivity : AppCompatActivity() {
                 
                 val exitCode = process.waitFor()
                 
-                val result = if (exitCode == 0) {
-                    output.toString().trim()
-                } else {
-                    "Error($exitCode): ${error.toString().trim()}"
+                val result = when {
+                    command.startsWith("pgrep") && exitCode == 1 -> ""  // pgrep tidak menemukan proses
+                    exitCode == 0 || output.isNotEmpty() -> output.toString().trim()
+                    else -> error.toString().trim()
                 }
                 
                 Log.d("Shell", "✅ Result: ${result.take(100)}...")
                 
-                // Kirim ke JavaScript
                 runOnUiThread {
                     val escaped = result
                         .replace("\\", "\\\\")
@@ -228,10 +230,13 @@ class MainActivity : AppCompatActivity() {
     }
     
     fun executeShellSync(command: String): String {
-        Log.d("Shell", "🚀 Sync: $command")
-        
         return try {
-            val process = Runtime.getRuntime().exec(command)
+            val finalCommand = when {
+                command.startsWith("wm") -> command.replace("wm", "cmd window")
+                else -> command
+            }
+            
+            val process = Runtime.getRuntime().exec(finalCommand.split(" ").toTypedArray())
             
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
@@ -248,17 +253,15 @@ class MainActivity : AppCompatActivity() {
             
             val exitCode = process.waitFor()
             
-            if (exitCode == 0) {
-                output.toString().trim()
-            } else {
-                "Error($exitCode): ${error.toString().trim()}"
+            when {
+                command.startsWith("pgrep") && exitCode == 1 -> ""
+                exitCode == 0 || output.isNotEmpty() -> output.toString().trim()
+                else -> error.toString().trim()
             }
         } catch (e: Exception) {
             "Error: ${e.message}"
         }
     }
-    
-    // ========== FUNGSI UNTUK JS ==========
     
     fun isShizukuAvailable(): Boolean {
         return isShizukuAvailable && isShizukuPermissionGranted
@@ -283,7 +286,6 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-// ========== JAVASCRIPT INTERFACE ==========
 class KyroosShellInterface(private val activity: MainActivity) {
     
     @JavascriptInterface
