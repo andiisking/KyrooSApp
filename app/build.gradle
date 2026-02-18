@@ -36,13 +36,17 @@ android {
     buildFeatures {
         viewBinding true
     }
+    
+    // PENTING: Agar file font tidak dikompres
+    aaptOptions {
+        noCompress "woff2"
+    }
 }
 
-// Tambahkan repositori JitPack
 repositories {
     google()
     mavenCentral()
-    maven { url 'https://jitpack.io' } // PENTING: untuk libsu
+    maven { url 'https://jitpack.io' }  // Untuk libsu
 }
 
 dependencies {
@@ -52,13 +56,13 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     
-    // Shizuku untuk akses root/ADB alternatif
+    // Shizuku untuk akses root/ADB
     implementation 'dev.rikka.shizuku:api:13.1.5'
     implementation 'dev.rikka.shizuku:provider:13.1.5'
     
-    // libsu untuk eksekusi shell yang mudah - VERSI TERBARU
-    implementation 'com.github.topjohnwu.libsu:core:5.2.0'  // Update ke 5.2.0
-    implementation 'com.github.topjohnwu.libsu:service:5.2.0'  // Update ke 5.2.0
+    // libsu untuk eksekusi shell
+    implementation 'com.github.topjohnwu.libsu:core:5.2.0'
+    implementation 'com.github.topjohnwu.libsu:service:5.2.0'
     
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

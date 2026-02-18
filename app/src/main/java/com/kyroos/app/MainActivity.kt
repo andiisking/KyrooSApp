@@ -9,8 +9,6 @@ import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceError
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -39,13 +37,13 @@ class MainActivity : AppCompatActivity() {
             isShizukuPermissionGranted = grantResult == PackageManager.PERMISSION_GRANTED
             runOnUiThread {
                 if (isShizukuPermissionGranted) {
-                    Toast.makeText(this, "✅ Shizuku permission granted!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Shizuku permission granted!", Toast.LENGTH_SHORT).show()
                     webView.evaluateJavascript(
                         "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
                         null
                     )
                 } else {
-                    Toast.makeText(this, "❌ Shizuku permission denied", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Shizuku permission denied", Toast.LENGTH_LONG).show()
                     webView.evaluateJavascript(
                         "if(window.onShizukuStatus) window.onShizukuStatus('denied')",
                         null
@@ -76,38 +74,18 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
-            
-            // SETTING UNTUK FONT ONLINE
             loadsImagesAutomatically = true
-            blockNetworkImage = false
-            blockNetworkLoads = false
-            
-            // SETTING CACHE - HAPUS setAppCacheEnabled dan setAppCachePath
-            cacheMode = WebSettings.LOAD_DEFAULT
-            
-            // SETTING LAINNYA
             loadWithOverviewMode = true
             useWideViewPort = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        }
-        
-        // WebViewClient untuk monitoring
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                Log.d("WebView", "Page loaded: $url")
-            }
             
-            override fun onReceivedError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                error: WebResourceError?
-            ) {
-                Log.e("WebView", "Error: ${error?.description}")
-            }
+            // DISABLE INTERNET - fonts are offline
+            blockNetworkImage = true
+            blockNetworkLoads = true
+            cacheMode = WebSettings.LOAD_NO_CACHE
         }
         
-        // WebChromeClient untuk console.log
+        webView.webViewClient = WebViewClient()
+        
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 Log.d("WebView", "${message.message()} (${message.lineNumber()})")
@@ -115,10 +93,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        // Tambahkan JavaScript interface
         webView.addJavascriptInterface(KyroosShellInterface(this), "KyroosApp")
-        
-        // Load HTML dari assets
         webView.loadUrl("file:///android_asset/index.html")
     }
     
@@ -207,7 +182,7 @@ class MainActivity : AppCompatActivity() {
     private fun onShizukuReady() {
         Log.d("Shizuku", "Shizuku ready!")
         runOnUiThread {
-            Toast.makeText(this, "✅ Shizuku siap digunakan!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Shizuku is ready to use!", Toast.LENGTH_SHORT).show()
             webView.evaluateJavascript(
                 "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
                 null
@@ -215,7 +190,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // Fungsi untuk menjalankan shell command dengan libsu
     suspend fun executeShellCommand(command: String): Shell.Result {
         return withContext(Dispatchers.IO) {
             Shell.cmd(command).exec()
@@ -223,7 +197,7 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-// ========== JAVASCRIPT INTERFACE UNTUK SHELL ==========
+// ========== JAVASCRIPT INTERFACE FOR SHELL ==========
 
 class KyroosShellInterface(private val activity: MainActivity) {
     
@@ -234,7 +208,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
         if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
             activity.runOnUiThread {
                 activity.webView.evaluateJavascript(
-                    "window.shellCallback('$callbackId', 'Error: Shizuku tidak tersedia', true)",
+                    "window.shellCallback('$callbackId', 'Error: Shizuku not available', true)",
                     null
                 )
             }
@@ -279,7 +253,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
         Log.d("Shell", "Sync command: $command")
         
         if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
-            return "Error: Shizuku tidak tersedia"
+            return "Error: Shizuku not available"
         }
 
         return try {
@@ -315,7 +289,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
     fun requestShizukuPermission() {
         activity.runOnUiThread {
             if (!activity.isShizukuAvailable) {
-                Toast.makeText(activity, "Shizuku tidak berjalan", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Shizuku is not running", Toast.LENGTH_SHORT).show()
             } else if (!activity.isShizukuPermissionGranted) {
                 Shizuku.requestPermission(activity.SHIZUKU_PERMISSION_CODE)
             }
@@ -350,7 +324,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
     fun clearCache() {
         activity.runOnUiThread {
             activity.webView.clearCache(true)
-            Toast.makeText(activity, "Cache dibersihkan", Toast.LENGTH_SHORT).show()
+            Toast.makeText(activity, "Cache cleared", Toast.LENGTH_SHORT).show()
         }
     }
 }

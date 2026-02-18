@@ -135,10 +135,10 @@ function updateShizukuUI(status) {
     const badge = document.getElementById('shizukuBadge');
     const desc = document.getElementById('shizukuDesc');
     const actions = document.getElementById('shizukuActions');
+    const icon = document.querySelector('#shizukuCard .shizuku-icon-wrapper i');
     
     if (!card || !badge || !desc || !actions) return;
     
-    // Reset classes
     card.className = 'card shizuku-card';
     
     switch(status) {
@@ -148,6 +148,7 @@ function updateShizukuUI(status) {
             badge.innerHTML = '● Ready';
             desc.innerHTML = 'Shizuku aktif dan siap digunakan';
             actions.innerHTML = '';
+            if (icon) icon.className = 'fas fa-check-circle';
             break;
             
         case 'no_permission':
@@ -157,9 +158,10 @@ function updateShizukuUI(status) {
             desc.innerHTML = 'Diperlukan izin Shizuku';
             actions.innerHTML = `
                 <button class="shizuku-btn" onclick="requestShizukuPermission()">
-                    <span class="material-symbols-rounded">security</span> Beri Izin
+                    <i class="fas fa-shield-alt"></i> Beri Izin
                 </button>
             `;
+            if (icon) icon.className = 'fas fa-exclamation-triangle';
             break;
             
         case 'not_installed':
@@ -169,11 +171,11 @@ function updateShizukuUI(status) {
             desc.innerHTML = 'Shizuku tidak terinstall';
             actions.innerHTML = `
                 <button class="shizuku-btn" onclick="openShizukuDownload()">
-                    <span class="material-symbols-rounded">download</span> Install
+                    <i class="fas fa-download"></i> Install
                 </button>
             `;
+            if (icon) icon.className = 'fas fa-times-circle';
             
-            // Tambah guide jika belum ada
             if (!document.getElementById('shizukuGuide')) {
                 const guide = document.createElement('div');
                 guide.id = 'shizukuGuide';
@@ -181,7 +183,7 @@ function updateShizukuUI(status) {
                 guide.innerHTML = `
                     Download dari 
                     <a href="#" onclick="openShizukuDownloadLink()">
-                        <span class="material-symbols-rounded">open_in_new</span> rikka.app
+                        <i class="fas fa-external-link-alt"></i> rikka.app
                     </a>
                 `;
                 card.appendChild(guide);
@@ -196,6 +198,7 @@ function updateShizukuUI(status) {
             badge.innerHTML = '✗ Error';
             desc.innerHTML = 'Gagal terhubung ke Shizuku';
             actions.innerHTML = '';
+            if (icon) icon.className = 'fas fa-exclamation-circle';
             
             const existingGuide = document.getElementById('shizukuGuide');
             if (existingGuide) existingGuide.remove();
@@ -210,7 +213,7 @@ function requestShizukuPermission() {
         const btn = document.querySelector('#shizukuActions .shizuku-btn');
         if (btn) {
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<span class="material-symbols-rounded spin">refresh</span> Meminta...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Meminta...';
             btn.disabled = true;
             
             setTimeout(() => {
@@ -358,18 +361,18 @@ async function checkStatus() {
         document.getElementById('sigmaSwitch').checked = isRun;
 
         const card = document.getElementById('statusCard');
-        const icon = document.getElementById('statusIcon');
+        const icon = document.querySelector('#statusIcon i');
         const title = document.getElementById('statusTitle');
         const desc = document.getElementById('statusDesc');
 
         if (isRun) {
             card.classList.add('active-mode');
-            icon.innerText = 'verified';
+            if (icon) icon.className = 'fas fa-check-circle';
             title.innerText = 'Kyroos Active';
             desc.innerText = 'Sigma binary running';
         } else {
             card.classList.remove('active-mode');
-            icon.innerText = 'hourglass_empty';
+            if (icon) icon.className = 'fas fa-hourglass-half';
             title.innerText = 'Service Idle';
             desc.innerText = 'Enable in settings';
         }
@@ -401,7 +404,7 @@ async function startAppScan() {
     document.getElementById('appInitState').style.display = 'none';
     document.getElementById('appSearch').classList.add('show');
     const container = document.getElementById('app-list-target');
-    container.innerHTML = '<div class="empty-state"><span class="material-symbols-rounded spin">refresh</span> Loading list...</div>';
+    container.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading list...</div>';
 
     try {
         const raw = await execShell("cmd package list packages -u").catch(() => "");
@@ -471,7 +474,7 @@ function renderAppList(filter = '') {
 
         div.innerHTML = `
             <div class="app-icon-placeholder">
-                <span class="material-symbols-rounded">android</span>
+                <i class="fas fa-android"></i>
             </div>
             <div class="app-card-info">
                 <div class="app-card-title">${escapeHtml(label)}</div>
@@ -619,7 +622,7 @@ async function applyResolution() {
         await execShell(`wm size ${w}x${h}`).catch(() => {});
         const btn = document.querySelector('.btn-apply');
         const originalText = btn.innerHTML;
-        btn.innerHTML = `<span class="material-symbols-rounded">check</span> Applied!`;
+        btn.innerHTML = '<i class="fas fa-check-circle"></i> Applied!';
         setTimeout(() => { btn.innerHTML = originalText; }, 1500);
     }
 }
@@ -747,7 +750,7 @@ async function startOpapsScan() {
 
     const btn = document.querySelector('#opapsInitState .btn-scan');
     const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="material-symbols-rounded spin">refresh</span> Scanning...';
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning...';
     btn.disabled = true;
 
     try {
@@ -820,13 +823,13 @@ function renderOpapsList(filter = '') {
 
         div.innerHTML = `
             <div class="app-icon-placeholder">
-                <span class="material-symbols-rounded">android</span>
+                <i class="fas fa-android"></i>
             </div>
             <div class="app-card-info">
                 <div class="app-card-title">${escapeHtml(label)}</div>
                 <div class="app-card-pkg">${escapeHtml(pkg)}</div>
             </div>
-            <span class="material-symbols-rounded" style="color: var(--md-outline);">play_circle</span>`;
+            <i class="fas fa-play-circle"></i>`;
         fragment.appendChild(div);
     });
     

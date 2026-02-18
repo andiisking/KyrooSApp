@@ -16,10 +16,10 @@ class KyroosApp : Application() {
         super.onCreate()
         instance = this
         
-        // Setup Shell untuk menggunakan Shizuku
+        // Setup Shell to use Shizuku
         Shell.enableVerboseLogging = false
         
-        // Gunakan nilai langsung 1 << 1 (nilai FLAG_USE_SHIZUKU = 2)
+        // Use direct value 2 (FLAG_USE_SHIZUKU)
         Shell.Builder.create()
             .setFlags(2)  // 2 = FLAG_USE_SHIZUKU
             .setInitializers(KyroosInitializer::class.java)
@@ -28,7 +28,7 @@ class KyroosApp : Application() {
     
     class KyroosInitializer : Initializer() {
         override fun onInit(context: Context, shell: Shell): Boolean {
-            // Inisialisasi environment variables jika diperlukan
+            // Initialize environment variables if needed
             shell.newJob()
                 .add("export PATH=\$PATH:/system/bin:/system/xbin")
                 .add("export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/system/lib64:/system/lib")

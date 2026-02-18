@@ -47,10 +47,9 @@ body {
 
 .header-branding { display: flex; align-items: center; gap: 12px; height: 60px; }
 
-.app-logo { 
+.app-logo i { 
     font-size: 34px; 
     color: var(--md-primary); 
-    font-variation-settings: 'FILL' 1, 'wght' 700; 
 }
 
 .app-title { 
@@ -82,7 +81,7 @@ body {
     animation: fadeUp var(--anim-duration) var(--anim-curve); 
 }
 
-/* ================== SHIZUKU CARD - KYROOS STYLE ================== */
+/* ================== SHIZUKU CARD ================== */
 .shizuku-card {
     background-color: var(--md-surface-container);
     border-radius: 26px;
@@ -134,10 +133,9 @@ body {
     flex-shrink: 0;
 }
 
-.shizuku-icon {
+.shizuku-icon-wrapper i {
     font-size: 28px;
     color: var(--md-primary);
-    font-variation-settings: 'FILL' 1;
 }
 
 .shizuku-info {
@@ -216,12 +214,12 @@ body {
     transition: transform 0.1s ease, opacity 0.2s ease;
 }
 
-.shizuku-btn:active {
-    transform: scale(0.95);
+.shizuku-btn i {
+    font-size: 16px;
 }
 
-.shizuku-btn .material-symbols-rounded {
-    font-size: 18px;
+.shizuku-btn:active {
+    transform: scale(0.95);
 }
 
 .shizuku-guide {
@@ -245,8 +243,8 @@ body {
     margin-left: 4px;
 }
 
-.shizuku-guide a:active {
-    opacity: 0.7;
+.shizuku-guide a i {
+    font-size: 14px;
 }
 
 /* ================== CARD STYLES ================== */
@@ -345,6 +343,10 @@ body {
     flex-shrink: 0;
 }
 
+.btn-icon-apply i {
+    font-size: 18px;
+}
+
 .btn-icon-apply:active { transform: scale(0.9); }
 
 .btn-apply {
@@ -364,6 +366,10 @@ body {
     justify-content: center; 
     gap: 8px;
     transition: opacity 0.2s, transform 0.1s;
+}
+
+.btn-apply i {
+    font-size: 16px;
 }
 
 .btn-apply:active { transform: scale(0.98); opacity: 0.9; }
@@ -387,6 +393,10 @@ body {
     transition: opacity 0.2s, transform 0.1s;
 }
 
+.btn-reset i {
+    font-size: 16px;
+}
+
 .btn-reset:active { transform: scale(0.98); opacity: 0.8; }
 
 .disabled-state { 
@@ -395,6 +405,7 @@ body {
     filter: grayscale(1); 
 }
 
+/* ================== STATUS HERO ================== */
 .status-hero { 
     background-color: var(--md-surface-container-high); 
     color: var(--md-on-bg); 
@@ -413,21 +424,29 @@ body {
 }
 
 .status-icon {
-    font-size: 32px; 
-    padding: 12px; 
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: all 0.3s var(--anim-curve);
     background: rgba(255, 255, 255, 0.05); 
+}
+
+.status-icon i {
+    font-size: 32px;
     color: var(--md-outline);
-    font-variation-settings: 'FILL' 0;
 }
 
 .status-hero.active-mode .status-icon {
     background: rgba(255, 255, 255, 0.2); 
-    color: var(--md-on-primary-container);
-    font-variation-settings: 'FILL' 1;
     box-shadow: 0 0 0 0 rgba(255, 219, 209, 0.4);
     animation: pulse-ring 2s infinite;
+}
+
+.status-hero.active-mode .status-icon i {
+    color: var(--md-on-primary-container);
 }
 
 @keyframes pulse-ring {
@@ -454,6 +473,7 @@ body {
     font-weight: 500; 
 }
 
+/* ================== INFO ITEMS ================== */
 .info-item { 
     display: flex; 
     align-items: center; 
@@ -473,10 +493,14 @@ body {
     height: 48px; 
     border-radius: 16px; 
     background-color: var(--md-surface-container-high); 
-    color: var(--md-primary); 
     display: flex; 
     align-items: center; 
     justify-content: center; 
+}
+
+.info-icon-box i { 
+    font-size: 28px; 
+    color: var(--md-primary); 
 }
 
 .info-content h3 { 
@@ -491,6 +515,7 @@ body {
     font-weight: 500; 
 }
 
+/* ================== SETTINGS ITEMS ================== */
 .settings-item { 
     display: flex; 
     justify-content: space-between; 
@@ -506,7 +531,9 @@ body {
 
 .settings-icon { 
     font-size: 28px; 
-    color: var(--md-outline); 
+    color: var(--md-outline);
+    width: 28px;
+    text-align: center;
 }
 
 .settings-text h3 { 
@@ -520,6 +547,7 @@ body {
     margin-top: 2px; 
 }
 
+/* ================== APP LIST ================== */
 .search-box { 
     background-color: var(--md-surface-container-high); 
     border: none; 
@@ -567,6 +595,10 @@ body {
     transition: transform 0.1s; 
 }
 
+.btn-scan i {
+    font-size: 16px;
+}
+
 .btn-scan:active { transform: scale(0.95); }
 
 .app-card-item { 
@@ -592,15 +624,15 @@ body {
     height: 48px; 
     border-radius: 14px; 
     background-color: var(--md-surface-container-high); 
-    color: var(--md-primary); 
     display: flex; 
     align-items: center; 
     justify-content: center; 
     flex-shrink: 0; 
 }
 
-.app-icon-placeholder .material-symbols-rounded { 
+.app-icon-placeholder i { 
     font-size: 28px; 
+    color: var(--md-primary); 
 }
 
 .app-card-info { 
@@ -624,6 +656,7 @@ body {
     text-overflow: ellipsis; 
 }
 
+/* ================== SWITCH ================== */
 .switch { 
     position: relative; 
     width: 52px; 
@@ -681,6 +714,7 @@ input:checked + .slider:before {
     bottom: 2px; 
 }
 
+/* ================== NAVIGATION ================== */
 .nav-container {
     position: fixed; 
     bottom: calc(24px + var(--window-inset-bottom, 0px));
@@ -730,7 +764,8 @@ input:checked + .slider:before {
     transition: background-color 0.2s ease; 
 }
 
-.nav-item .material-symbols-rounded { 
+.nav-pill i { 
+    font-size: 24px; 
     color: var(--md-outline); 
     transition: 0.2s; 
 }
@@ -746,10 +781,8 @@ input:checked + .slider:before {
     background-color: var(--md-secondary-container); 
 }
 
-.nav-item.active .material-symbols-rounded { 
+.nav-item.active .nav-pill i { 
     color: var(--md-on-secondary-container); 
-    font-variation-settings: 'FILL' 1; 
-    transform: scale(1.1); 
 }
 
 .nav-item.active .nav-label { 
@@ -757,6 +790,7 @@ input:checked + .slider:before {
     font-weight: 700; 
 }
 
+/* ================== SUB PAGES ================== */
 .sub-page {
     position: fixed; 
     top: 0; 
@@ -796,10 +830,15 @@ input:checked + .slider:before {
     cursor: pointer; 
 }
 
+.back-btn i {
+    font-size: 24px;
+}
+
 .back-btn:active { 
     background-color: var(--md-surface-container); 
 }
 
+/* ================== APP DETAIL ================== */
 .app-detail-hero { 
     display: flex; 
     flex-direction: column; 
@@ -814,7 +853,6 @@ input:checked + .slider:before {
     height: 80px; 
     margin-bottom: 16px; 
     background-color: var(--md-surface-container-high); 
-    color: var(--md-primary);
     border-radius: 24px; 
     display: flex; 
     align-items: center; 
@@ -822,8 +860,9 @@ input:checked + .slider:before {
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
-.detail-icon-box .material-symbols-rounded { 
+.detail-icon-box i { 
     font-size: 40px; 
+    color: var(--md-primary); 
 }
 
 .detail-label { 
@@ -852,6 +891,7 @@ input:checked + .slider:before {
     opacity: 0.8; 
 }
 
+/* ================== MODALS ================== */
 .modal-overlay {
     position: fixed; 
     top: 0; 
@@ -915,6 +955,7 @@ input:checked + .slider:before {
     color: var(--md-on-primary-container); 
 }
 
+/* ================== PROFILE ================== */
 .profile-box { 
     display: flex; 
     flex-direction: column; 
@@ -955,6 +996,10 @@ input:checked + .slider:before {
     gap: 6px;
 }
 
+.btn-profile i {
+    font-size: 16px;
+}
+
 .btn-telegram { 
     background-color: #2AABEE; 
     color: white; 
@@ -965,30 +1010,7 @@ input:checked + .slider:before {
     color: var(--md-primary); 
 }
 
-@keyframes fadeUp { 
-    from { opacity: 0; transform: translateY(10px); } 
-    to { opacity: 1; transform: translateY(0); } 
-}
-
-@keyframes slideInLeft { 
-    from { opacity: 0; transform: translateX(-10px); } 
-    to { opacity: 1; transform: translateX(0); } 
-}
-
-@keyframes fadeIn { 
-    from { opacity: 0; } 
-    to { opacity: 1; } 
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-
-.spin {
-    animation: spin 1s linear infinite;
-}
-
+/* ================== OPAPS ================== */
 #opapsPage .app-card-info {
     flex: 1;
     margin-right: 12px;
@@ -1004,8 +1026,9 @@ input:checked + .slider:before {
     background-color: var(--md-surface-container-high);
 }
 
-#opapsPage .material-symbols-rounded:last-child {
+#opapsPage .app-card-item i:last-child {
     margin-left: auto;
+    color: var(--md-outline);
 }
 
 .pkg-chip {
@@ -1020,6 +1043,11 @@ input:checked + .slider:before {
     border: 1px solid rgba(255, 181, 150, 0.15);
 }
 
+.pkg-chip i {
+    color: var(--md-primary);
+    font-size: 18px;
+}
+
 #opapsTargetPkg {
     color: var(--md-primary);
     font-size: 13px;
@@ -1028,3 +1056,36 @@ input:checked + .slider:before {
     word-break: break-all;
     text-align: left;
 }
+
+/* ================== ANIMATIONS ================== */
+@keyframes fadeUp { 
+    from { opacity: 0; transform: translateY(10px); } 
+    to { opacity: 1; transform: translateY(0); } 
+}
+
+@keyframes slideInLeft { 
+    from { opacity: 0; transform: translateX(-10px); } 
+    to { opacity: 1; transform: translateX(0); } 
+}
+
+@keyframes fadeIn { 
+    from { opacity: 0; } 
+    to { opacity: 1; } 
+}
+
+/* Font Awesome spin animation override */
+.fa-spin {
+    animation: fa-spin 2s linear infinite;
+}
+
+@keyframes fa-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ================== UTILITY CLASSES ================== */
+.text-center { text-align: center; }
+.opacity-5 { opacity: 0.5; }
+.mt-2 { margin-top: 8px; }
+.mb-2 { margin-bottom: 8px; }
+.p-2 { padding: 8px; }
