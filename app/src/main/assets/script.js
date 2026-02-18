@@ -22,15 +22,41 @@ function cleanList(arr) {
     return [...new Set(arr)].filter(p => p && p.trim().length > 0);
 }
 
-// ================== EKSEKUSI PERINTAH (TIDAK MEMFILTER ERROR) ==================
+// ================== EKSEKUSI PERINTAH (DIPERBAIKI JADI ASYNC & BASE64) ==================
+
+// Siapkan penampung callback global untuk menjembatani Kotlin & JS
+window.adbCallbacks = {};
+
+window.adbCallback = function(callbackId, base64Result, isError) {
+    if (window.adbCallbacks[callbackId]) {
+        try {
+            // Decode Base64 UTF-8 dari Kotlin kembali ke String utuh
+            const binaryString = atob(base64Result);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const result = new TextDecoder('utf-8').decode(bytes);
+            
+            if (isError) window.adbCallbacks[callbackId].reject(result);
+            else window.adbCallbacks[callbackId].resolve(result);
+        } catch (e) {
+            window.adbCallbacks[callbackId].resolve(base64Result); // Fallback
+        }
+        delete window.adbCallbacks[callbackId];
+    }
+};
+
 async function execShell(cmd) {
     try {
-        // 1. Prioritas Utama: Gunakan ADB KyrooS
+        // 1. Prioritas Utama: Gunakan ADB KyrooS secara Asynchronous
         if (typeof KyroosApp !== 'undefined') {
-            console.log("ADB exec: " + cmd);
-            const result = KyroosApp.executeShell(cmd);
-            console.log("ADB result:", result);
-            return result; // kembalikan apa adanya (bisa string error atau output)
+            console.log("ADB exec (Async): " + cmd);
+            return new Promise((resolve, reject) => {
+                const callbackId = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+                window.adbCallbacks[callbackId] = { resolve, reject };
+                KyroosApp.executeShell(cmd, callbackId); 
+            });
         }
 
         // 2. Prioritas Kedua: KernelSU
@@ -91,7 +117,8 @@ function openAppDetail(pkg) {
     document.getElementById('gameSwitch').checked = currentGameList.includes(pkg);
     document.getElementById('devSwitch').checked = currentDevList.includes(pkg);
 
-    execShell(`cmd deviceidle whitelist | grep ${pkg}`).then(res => {
+    // Diperbaiki: dibungkus dengan sh -c agar grep terbaca baik oleh shell
+    execShell(`sh -c "cmd deviceidle whitelist | grep ${pkg}"`).then(res => {
         document.getElementById('whitelistSwitch').checked = res.includes(pkg);
     });
 
@@ -105,7 +132,6 @@ function closeAppDetail() {
 
 // ================== HOME ==================
 async function updateHomeData() {
-    // Gunakan beberapa percobaan untuk chipset
     let chip = await execShell("/system/bin/getprop ro.board.platform");
     chip = chip.trim();
     if (!chip || chip.startsWith("Error")) {
@@ -119,7 +145,6 @@ async function updateHomeData() {
     }
     document.getElementById('chipsetInfo').innerText = chip || "Unknown";
 
-    // RAM
     const memRaw = await execShell("cat /proc/meminfo | grep MemTotal");
     const memMatch = memRaw.match(/MemTotal:\s+(\d+)/);
     if (memMatch) {
@@ -129,19 +154,16 @@ async function updateHomeData() {
         document.getElementById('ramInfo').innerText = "Error";
     }
 
-    // Kernel
     let kernel = await execShell("/system/bin/uname -r");
     kernel = kernel.trim();
     if (!kernel || kernel.startsWith("Error")) {
         kernel = await execShell("cat /proc/version");
-        // parse versi dari /proc/version
         const vMatch = kernel.match(/version (.*?) \(/);
         if (vMatch) kernel = vMatch[1];
         else kernel = "Unknown";
     }
     document.getElementById('kernelInfo').innerText = kernel || "Unknown";
 
-    // Status Sigma
     checkStatus();
 }
 
@@ -185,10 +207,8 @@ async function startAppScan() {
     container.innerHTML = '<div style="text-align:center; padding:20px;">Loading list...</div>';
 
     let rawList = [];
-    // Coba dengan cmd package (lebih modern)
     let raw = await execShell("cmd package list packages -u");
     if (!raw || raw.startsWith("Error")) {
-        // Fallback ke pm
         raw = await execShell("/system/bin/pm list packages -u");
     }
     const regex = /package:([^\s]+)/g;
@@ -208,7 +228,6 @@ async function startAppScan() {
 }
 
 async function loadLabels(pkgs) {
-    // Jika ada KSU, gunakan untuk mendapatkan label
     if (window.ksu && window.ksu.getPackagesInfo) {
         try {
             const chunk = pkgs.slice(0, 500);
@@ -222,7 +241,6 @@ async function loadLabels(pkgs) {
             console.error("loadLabels error:", e);
         }
     } else {
-        // Fallback: gunakan bagian terakhir package name
         pkgs.forEach(pkg => {
             if (!infoCache[pkg]) infoCache[pkg] = {};
             infoCache[pkg].label = pkg.split('.').pop();
@@ -598,7 +616,8 @@ async function runOpapsConfirmed() {
     closeOpapsConfirm();
 
     try {
-        await execShell(`nohup opaps ${pkg}`);
+        // Diperbaiki: dipaksa masuk ke background shell agar tidak nyangkut
+        await execShell(`nohup opaps ${pkg} > /dev/null 2>&1 &`);
         alert(`Success! Opaps applied to ${pkg}.`);
     } catch (e) {
         alert(`Failed to execute Opaps: ${e}`);
