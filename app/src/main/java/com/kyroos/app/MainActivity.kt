@@ -82,10 +82,8 @@ class MainActivity : AppCompatActivity() {
             blockNetworkImage = false
             blockNetworkLoads = false
             
-            // SETTING CACHE
+            // SETTING CACHE - HAPUS setAppCacheEnabled dan setAppCachePath
             cacheMode = WebSettings.LOAD_DEFAULT
-            setAppCacheEnabled(true)
-            setAppCachePath(context.cacheDir.path)
             
             // SETTING LAINNYA
             loadWithOverviewMode = true
@@ -354,12 +352,5 @@ class KyroosShellInterface(private val activity: MainActivity) {
             activity.webView.clearCache(true)
             Toast.makeText(activity, "Cache dibersihkan", Toast.LENGTH_SHORT).show()
         }
-    }
-    
-    @JavascriptInterface
-    fun getCacheSize(): String {
-        val cacheDir = activity.cacheDir
-        val size = cacheDir?.totalSpace ?: 0
-        return "${size / 1024 / 1024} MB"
     }
 }
