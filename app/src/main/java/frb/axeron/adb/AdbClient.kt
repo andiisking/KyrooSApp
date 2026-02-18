@@ -1,7 +1,6 @@
 package frb.axeron.adb
 
 import android.util.Log
-import frb.axeron.adb.AdbProtocol.*  // Ganti dengan import satu per satu
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
