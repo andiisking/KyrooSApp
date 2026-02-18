@@ -1,6 +1,6 @@
 const CONFIG_PATH = "/storage/emulated/0/kikiros";
 
-// Fallback KSU
+// Fallback jika tidak ada KSU
 window.ksu = window.ksu || { exec: async () => ({ stdout: "" }) };
 
 let allPackages = [];
@@ -10,190 +10,50 @@ let currentAngleList = [];
 let currentGameList = [];
 let currentDevList = [];
 let isScanning = false;
-let isAdbReady = false;
 
-function safeJSONParse(str) { 
-    try { return JSON.parse(str); } catch { return []; } 
-}
+function safeJSONParse(str) { try { return JSON.parse(str); } catch { return []; } }
 
 function debounce(func, delay) {
     let timeout;
-    return (...args) => { 
-        clearTimeout(timeout); 
-        timeout = setTimeout(() => func.apply(this, args), delay); 
-    };
+    return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); };
 }
 
 function cleanList(arr) {
     return [...new Set(arr)].filter(p => p && p.trim().length > 0);
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// ================== ADB QUEUE SYSTEM (ROBUST) ==================
-
-window.adbCallbacks = {};
-const adbQueue = [];           
-let isAdbExecuting = false;    
-let queueLock = false;         
-let watchdogTimer = null;
-
-// CALLBACK HARUS DIDEKLARASIKAN DI GLOBAL SCOPE SEBELUM APAPUN
-window.adbCallback = function(callbackId, base64Result, isError) {
-    console.log("ADB Callback:", callbackId?.substring(0, 20), "error:", isError);
-    stopWatchdog();
-    
-    const callback = window.adbCallbacks[callbackId];
-    
-    if (callback) {
-        try {
-            let result = "";
-            if (base64Result && typeof base64Result === 'string') {
-                try {
-                    const binaryString = atob(base64Result);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
-                    }
-                    result = new TextDecoder('utf-8').decode(bytes);
-                } catch (decodeErr) {
-                    console.warn("Base64 decode failed, using raw");
-                    result = base64Result;
-                }
-            }
-            
-            console.log("Callback resolved:", callbackId?.substring(0, 20), "result length:", result.length);
-            
-            if (isError) callback.reject(result);
-            else callback.resolve(result);
-        } catch (e) {
-            console.error("Callback handler error:", e);
-            callback.resolve("");
-        }
-        delete window.adbCallbacks[callbackId];
-    } else {
-        console.warn("Callback not found:", callbackId);
-        window._lastUnhandledCallback = { id: callbackId, time: Date.now(), result: base64Result?.substring(0, 50) };
-    }
-
-    // Release locks
-    isAdbExecuting = false;
-    queueLock = false;
-    
-    // Process next dengan delay
-    setTimeout(processQueue, 100);
-};
-
-function startWatchdog() {
-    if (watchdogTimer) clearTimeout(watchdogTimer);
-    watchdogTimer = setTimeout(() => {
-        console.error("WATCHDOG: Force reset queue");
-        isAdbExecuting = false;
-        queueLock = false;
-        processQueue();
-    }, 15000);
-}
-
-function stopWatchdog() {
-    if (watchdogTimer) {
-        clearTimeout(watchdogTimer);
-        watchdogTimer = null;
-    }
-}
-
-function processQueue() {
-    if (queueLock || isAdbExecuting) {
-        return;
-    }
-    
-    if (adbQueue.length === 0) {
-        return;
-    }
-    
-    queueLock = true;
-    isAdbExecuting = true;
-    
-    const task = adbQueue.shift();
-    const callbackId = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    
-    console.log("Queue exec [" + adbQueue.length + " left]:", task.cmd?.substring(0, 40));
-    
-    window.adbCallbacks[callbackId] = { 
-        resolve: (r) => { 
-            console.log("Resolve:", callbackId?.substring(0, 20));
-            task.resolve(r); 
-        }, 
-        reject: (e) => { 
-            console.log("Reject:", callbackId?.substring(0, 20));
-            task.reject(e); 
-        } 
-    };
-    
-    if (typeof KyroosApp === 'undefined' || !KyroosApp.executeShell) {
-        console.error("KyroosApp missing!");
-        isAdbExecuting = false;
-        queueLock = false;
-        task.reject("Error: KyroosApp not available");
-        delete window.adbCallbacks[callbackId];
-        setTimeout(processQueue, 100);
-        return;
-    }
-    
-    startWatchdog();
-    
-    try {
-        KyroosApp.executeShell(task.cmd, callbackId);
-    } catch (e) {
-        console.error("ExecuteShell exception:", e);
-        stopWatchdog();
-        isAdbExecuting = false;
-        queueLock = false;
-        task.reject("Error: " + e.message);
-        delete window.adbCallbacks[callbackId];
-        setTimeout(processQueue, 100);
-    }
-}
-
+// ================== EKSEKUSI PERINTAH (TIDAK MEMFILTER ERROR) ==================
 async function execShell(cmd) {
-    if (!cmd || typeof cmd !== 'string') {
-        return "Error: Invalid command";
-    }
+    try {
+        // 1. Prioritas Utama: Gunakan ADB KyrooS
+        if (typeof KyroosApp !== 'undefined') {
+            console.log("ADB exec: " + cmd);
+            const result = KyroosApp.executeShell(cmd);
+            console.log("ADB result:", result);
+            return result; // kembalikan apa adanya (bisa string error atau output)
+        }
 
-    if (typeof KyroosApp !== 'undefined' && KyroosApp.executeShell) {
-        return new Promise((resolve, reject) => {
-            adbQueue.push({ cmd, resolve, reject });
-            setTimeout(processQueue, 50);
-        });
-    }
-
-    if (window.ksu && window.ksu.exec) {
-        try {
+        // 2. Prioritas Kedua: KernelSU
+        if (window.ksu && window.ksu.exec) {
+            console.log("KSU exec: " + cmd);
             const res = await window.ksu.exec(cmd);
             return res.stdout || res || "";
-        } catch (e) {
-            return "Error: " + e.message;
         }
+
+        console.warn("No execution bridge found!");
+        return "";
+    } catch (e) {
+        console.error("Exec exception: ", e);
+        return "Error: " + e.message;
     }
-
-    return "Error: No ADB/KSU available";
 }
-
-// Callback dari Kotlin saat ADB ready
-window.onAdbReady = function(port) {
-    console.log("ADB Ready on port:", port);
-    isAdbReady = true;
-};
 
 // ================== NAVIGASI ==================
 function switchTab(tabId) {
     document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    document.getElementById(tabId)?.classList.add('active');
-    document.getElementById('nav-' + tabId)?.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+    document.getElementById('nav-' + tabId).classList.add('active');
     if (tabId === 'home') updateHomeData();
 }
 
@@ -202,45 +62,19 @@ function toggleAppConfig(el) {
     localStorage.setItem('advAppConfig', on);
     const nav = document.getElementById('mainNav');
     const btn = document.getElementById('nav-apps');
-    if (on) { 
-        btn?.classList.remove('hidden-tab'); 
-        nav?.classList.add('wide'); 
-    } else { 
-        btn?.classList.add('hidden-tab'); 
-        nav?.classList.remove('wide'); 
-    }
-    if (!on && document.getElementById('apps')?.classList.contains('active')) {
-        switchTab('home');
-    }
+    if (on) { btn.classList.remove('hidden-tab'); nav.classList.add('wide'); }
+    else { btn.classList.add('hidden-tab'); nav.classList.remove('wide'); }
+    if (!on && document.getElementById('apps').classList.contains('active')) switchTab('home');
 }
 
-function openConfigPage() { 
-    document.getElementById('configPage')?.classList.add('open'); 
-    document.getElementById('mainNav')?.classList.add('hidden'); 
-}
+function openConfigPage() { document.getElementById('configPage').classList.add('open'); document.getElementById('mainNav').classList.add('hidden'); }
+function closeConfigPage() { document.getElementById('configPage').classList.remove('open'); document.getElementById('mainNav').classList.remove('hidden'); }
 
-function closeConfigPage() { 
-    document.getElementById('configPage')?.classList.remove('open'); 
-    document.getElementById('mainNav')?.classList.remove('hidden'); 
-}
+function openTweakPage() { document.getElementById('tweakPage').classList.add('open'); document.getElementById('mainNav').classList.add('hidden'); }
+function closeTweakPage() { document.getElementById('tweakPage').classList.remove('open'); document.getElementById('mainNav').classList.remove('hidden'); }
 
-function openTweakPage() { 
-    document.getElementById('tweakPage')?.classList.add('open'); 
-    document.getElementById('mainNav')?.classList.add('hidden'); 
-}
-
-function closeTweakPage() { 
-    document.getElementById('tweakPage')?.classList.remove('open'); 
-    document.getElementById('mainNav')?.classList.remove('hidden'); 
-}
-
-function openDevModal() { 
-    document.getElementById('devModal')?.classList.add('show'); 
-}
-
-function closeDevModal() { 
-    document.getElementById('devModal')?.classList.remove('show'); 
-}
+function openDevModal() { document.getElementById('devModal').classList.add('show'); }
+function closeDevModal() { document.getElementById('devModal').classList.remove('show'); }
 
 async function openTgLink(url) {
     await execShell(`am start -a android.intent.action.VIEW -d "${url}"`);
@@ -250,141 +84,94 @@ async function openTgLink(url) {
 function openAppDetail(pkg) {
     currentDetailPkg = pkg;
     const cache = infoCache[pkg] || {};
-    
-    const labelEl = document.getElementById('detailAppLabel');
-    const pkgEl = document.getElementById('detailAppPkg');
-    
-    if (labelEl) labelEl.innerText = cache.label || pkg;
-    if (pkgEl) pkgEl.innerText = pkg;
+    document.getElementById('detailAppLabel').innerText = cache.label || pkg;
+    document.getElementById('detailAppPkg').innerText = pkg;
 
-    const angleSw = document.getElementById('angleSwitch');
-    const gameSw = document.getElementById('gameSwitch');
-    const devSw = document.getElementById('devSwitch');
-    
-    if (angleSw) angleSw.checked = currentAngleList.includes(pkg);
-    if (gameSw) gameSw.checked = currentGameList.includes(pkg);
-    if (devSw) devSw.checked = currentDevList.includes(pkg);
+    document.getElementById('angleSwitch').checked = currentAngleList.includes(pkg);
+    document.getElementById('gameSwitch').checked = currentGameList.includes(pkg);
+    document.getElementById('devSwitch').checked = currentDevList.includes(pkg);
 
-    execShell(`cmd deviceidle whitelist | grep ${pkg} || echo "NOT_FOUND"`)
-        .then(res => {
-            const whitelistSw = document.getElementById('whitelistSwitch');
-            if (whitelistSw) whitelistSw.checked = res.includes(pkg) && !res.includes("NOT_FOUND");
-        })
-        .catch(err => {
-            console.error("Whitelist check failed:", err);
-        });
+    execShell(`cmd deviceidle whitelist | grep ${pkg}`).then(res => {
+        document.getElementById('whitelistSwitch').checked = res.includes(pkg);
+    });
 
-    document.getElementById('appDetailPage')?.classList.add('open');
-    document.getElementById('mainNav')?.classList.add('hidden');
+    document.getElementById('appDetailPage').classList.add('open');
+    document.getElementById('mainNav').classList.add('hidden');
 }
-
 function closeAppDetail() {
-    document.getElementById('appDetailPage')?.classList.remove('open');
-    document.getElementById('mainNav')?.classList.remove('hidden');
+    document.getElementById('appDetailPage').classList.remove('open');
+    document.getElementById('mainNav').classList.remove('hidden');
 }
 
 // ================== HOME ==================
 async function updateHomeData() {
-    console.log("Updating home...");
-    
-    try {
-        // Chipset
-        let chip = "";
-        const props = ["ro.board.platform", "ro.product.board", "ro.chipname", "ro.hardware"];
-        
-        for (const prop of props) {
-            if (chip) break;
-            try {
-                const result = await execShell(`getprop ${prop}`);
-                const trimmed = result.trim();
-                if (trimmed && !trimmed.startsWith("Error") && trimmed !== "") {
-                    chip = trimmed;
-                }
-            } catch (e) {}
-        }
-        
-        const chipsetEl = document.getElementById('chipsetInfo');
-        if (chipsetEl) chipsetEl.innerText = chip || "Unknown";
-
-        // RAM
-        try {
-            const memRaw = await execShell("cat /proc/meminfo | grep MemTotal");
-            const memMatch = memRaw.match(/MemTotal:\s+(\d+)/);
-            const ramEl = document.getElementById('ramInfo');
-            if (memMatch && ramEl) {
-                ramEl.innerText = (parseInt(memMatch[1]) / 1024 / 1024).toFixed(1) + " GB";
-            } else if (ramEl) {
-                ramEl.innerText = "Unknown";
-            }
-        } catch (e) {
-            const ramEl = document.getElementById('ramInfo');
-            if (ramEl) ramEl.innerText = "Error";
-        }
-
-        // Kernel
-        let kernel = "";
-        try {
-            kernel = (await execShell("uname -r")).trim();
-        } catch (e) {}
-        
-        if (!kernel) {
-            try {
-                const ver = await execShell("cat /proc/version");
-                const match = ver.match(/version\s+([^\s]+)/);
-                if (match) kernel = match[1];
-            } catch (e) {}
-        }
-        
-        const kernelEl = document.getElementById('kernelInfo');
-        if (kernelEl) kernelEl.innerText = kernel || "Unknown";
-
-        await checkStatus();
-    } catch (e) {
-        console.error("updateHomeData error:", e);
+    // Gunakan beberapa percobaan untuk chipset
+    let chip = await execShell("/system/bin/getprop ro.board.platform");
+    chip = chip.trim();
+    if (!chip || chip.startsWith("Error")) {
+        chip = (await execShell("/system/bin/getprop ro.product.board")).trim();
     }
+    if (!chip || chip.startsWith("Error")) {
+        chip = (await execShell("/system/bin/getprop ro.chipname")).trim();
+    }
+    if (!chip || chip.startsWith("Error")) {
+        chip = (await execShell("/system/bin/getprop ro.hardware")).trim();
+    }
+    document.getElementById('chipsetInfo').innerText = chip || "Unknown";
+
+    // RAM
+    const memRaw = await execShell("cat /proc/meminfo | grep MemTotal");
+    const memMatch = memRaw.match(/MemTotal:\s+(\d+)/);
+    if (memMatch) {
+        const kb = parseInt(memMatch[1]);
+        document.getElementById('ramInfo').innerText = (kb / 1024 / 1024).toFixed(1) + " GB";
+    } else {
+        document.getElementById('ramInfo').innerText = "Error";
+    }
+
+    // Kernel
+    let kernel = await execShell("/system/bin/uname -r");
+    kernel = kernel.trim();
+    if (!kernel || kernel.startsWith("Error")) {
+        kernel = await execShell("cat /proc/version");
+        // parse versi dari /proc/version
+        const vMatch = kernel.match(/version (.*?) \(/);
+        if (vMatch) kernel = vMatch[1];
+        else kernel = "Unknown";
+    }
+    document.getElementById('kernelInfo').innerText = kernel || "Unknown";
+
+    // Status Sigma
+    checkStatus();
 }
 
 async function checkStatus() {
-    try {
-        const pid = await execShell("pgrep -f sigma 2>/dev/null || echo ''");
-        const isRun = pid && pid.trim().length > 0 && !pid.includes("Error");
-        
-        const sigmaSw = document.getElementById('sigmaSwitch');
-        if (sigmaSw) sigmaSw.checked = isRun;
+    const pid = await execShell("pgrep -f sigma");
+    const isRun = pid.trim().length > 0 && !pid.startsWith("Error");
+    document.getElementById('sigmaSwitch').checked = isRun;
 
-        const card = document.getElementById('statusCard');
-        const icon = document.getElementById('statusIcon');
-        const title = document.getElementById('statusTitle');
-        const desc = document.getElementById('statusDesc');
+    const card = document.getElementById('statusCard');
+    const icon = document.getElementById('statusIcon');
+    const title = document.getElementById('statusTitle');
+    const desc = document.getElementById('statusDesc');
 
-        if (isRun) {
-            card?.classList.add('active-mode');
-            if (icon) icon.innerText = 'verified';
-            if (title) title.innerText = 'Kyroos Active';
-            if (desc) desc.innerText = 'Sigma binary running';
-        } else {
-            card?.classList.remove('active-mode');
-            if (icon) icon.innerText = 'hourglass_empty';
-            if (title) title.innerText = 'Service Idle';
-            if (desc) desc.innerText = 'Enable in settings';
-        }
-    } catch (e) {
-        console.error("checkStatus error:", e);
+    if (isRun) {
+        card.classList.add('active-mode');
+        icon.innerText = 'verified';
+        title.innerText = 'Kyroos Active';
+        desc.innerText = 'Sigma binary running';
+    } else {
+        card.classList.remove('active-mode');
+        icon.innerText = 'hourglass_empty';
+        title.innerText = 'Service Idle';
+        desc.innerText = 'Enable in settings';
     }
 }
 
 async function toggleSigma(el) {
-    try {
-        if (el.checked) {
-            await execShell("nohup sigma > /dev/null 2>&1 &");
-        } else {
-            await execShell("pkill -f sigma 2>/dev/null || true");
-        }
-        setTimeout(checkStatus, 800);
-    } catch (e) {
-        console.error("toggleSigma error:", e);
-        setTimeout(() => { el.checked = !el.checked; }, 100);
-    }
+    if (el.checked) await execShell("nohup sigma > /dev/null 2>&1 &");
+    else await execShell("pkill -f sigma && pkill -f sigma");
+    setTimeout(checkStatus, 500);
 }
 
 // ================== APPS LIST ==================
@@ -392,53 +179,41 @@ async function startAppScan() {
     if (isScanning) return;
     isScanning = true;
 
-    document.getElementById('appInitState')?.style.setProperty('display', 'none');
-    document.getElementById('appSearch')?.classList.add('show');
-    
+    document.getElementById('appInitState').style.display = 'none';
+    document.getElementById('appSearch').classList.add('show');
     const container = document.getElementById('app-list-target');
-    if (container) container.innerHTML = '<div style="text-align:center; padding:20px;">Loading...</div>';
+    container.innerHTML = '<div style="text-align:center; padding:20px;">Loading list...</div>';
 
-    try {
-        let raw = "";
-        
-        try {
-            raw = await execShell("cmd package list packages -u 2>/dev/null");
-        } catch (e) {}
-        
-        if (!raw || raw.trim() === "") {
-            raw = await execShell("pm list packages -u");
-        }
-        
-        const regex = /package:([^\s]+)/g;
-        let match;
-        allPackages = [];
-        
-        while ((match = regex.exec(raw)) !== null) {
-            const pkg = match[1];
-            if (!pkg.includes("overlay")) {
-                allPackages.push(pkg);
-            }
-        }
-
-        allPackages.sort();
-        await loadLabels(allPackages);
-        renderAppList();
-    } catch (e) {
-        console.error("startAppScan error:", e);
-        if (container) {
-            container.innerHTML = '<div style="text-align:center; padding:20px; color: red;">Failed</div>';
-        }
-    } finally {
-        isScanning = false;
+    let rawList = [];
+    // Coba dengan cmd package (lebih modern)
+    let raw = await execShell("cmd package list packages -u");
+    if (!raw || raw.startsWith("Error")) {
+        // Fallback ke pm
+        raw = await execShell("/system/bin/pm list packages -u");
     }
+    const regex = /package:([^\s]+)/g;
+    let match;
+    while ((match = regex.exec(raw)) !== null) {
+        const pkg = match[1];
+        if (!pkg.startsWith("com.android.overlay") && !pkg.startsWith("com.google.android.overlay")) {
+            rawList.push(pkg);
+        }
+    }
+
+    allPackages = rawList;
+    allPackages.sort();
+    await loadLabels(allPackages);
+    renderAppList();
+    isScanning = false;
 }
 
 async function loadLabels(pkgs) {
+    // Jika ada KSU, gunakan untuk mendapatkan label
     if (window.ksu && window.ksu.getPackagesInfo) {
         try {
             const chunk = pkgs.slice(0, 500);
-            const result = await window.ksu.getPackagesInfo(JSON.stringify(chunk));
-            const infos = safeJSONParse(result);
+            const infoJson = JSON.stringify(chunk);
+            const infos = safeJSONParse(await window.ksu.getPackagesInfo(infoJson));
             infos.forEach(item => {
                 if (!infoCache[item.packageName]) infoCache[item.packageName] = {};
                 infoCache[item.packageName].label = item.appLabel;
@@ -447,10 +222,10 @@ async function loadLabels(pkgs) {
             console.error("loadLabels error:", e);
         }
     } else {
+        // Fallback: gunakan bagian terakhir package name
         pkgs.forEach(pkg => {
             if (!infoCache[pkg]) infoCache[pkg] = {};
-            const parts = pkg.split('.');
-            infoCache[pkg].label = parts[parts.length - 1] || pkg;
+            infoCache[pkg].label = pkg.split('.').pop();
         });
     }
 }
@@ -458,30 +233,28 @@ async function loadLabels(pkgs) {
 function renderAppList(filter = '') {
     const container = document.getElementById('app-list-target');
     const countInfo = document.getElementById('app-count-info');
-    
-    if (!container) return;
-    
     const filterLower = filter.toLowerCase();
-    const filtered = allPackages.filter(pkg => {
-        const label = (infoCache[pkg]?.label || "").toLowerCase();
-        return pkg.toLowerCase().includes(filterLower) || label.includes(filterLower);
-    });
 
-    if (countInfo) {
-        countInfo.textContent = `${filtered.length} apps found`;
-        countInfo.style.display = 'block';
-    }
+    const filtered = allPackages.filter(pkg =>
+        pkg.toLowerCase().includes(filterLower) ||
+        (infoCache[pkg]?.label || '').toLowerCase().includes(filterLower)
+    );
+
+    countInfo.textContent = `${filtered.length} apps found`;
+    countInfo.style.display = 'block';
 
     if (filtered.length === 0) {
-        container.innerHTML = '<div style="text-align:center; opacity:0.5; padding:20px;">No apps</div>';
+        container.innerHTML = '<div style="text-align:center; opacity:0.5; padding:20px;">No matching apps</div>';
         return;
     }
 
-    const limit = filter === '' ? 100 : filtered.length;
+    const renderLimit = filter === '' ? 100 : filtered.length;
     const fragment = document.createDocumentFragment();
 
-    filtered.slice(0, limit).forEach(pkg => {
-        const label = infoCache[pkg]?.label || pkg;
+    filtered.slice(0, renderLimit).forEach(pkg => {
+        const cached = infoCache[pkg];
+        const label = cached?.label || pkg;
+
         const div = document.createElement('div');
         div.className = 'app-card-item';
         div.onclick = () => openAppDetail(pkg);
@@ -491,53 +264,46 @@ function renderAppList(filter = '') {
                 <span class="material-symbols-rounded">android</span>
             </div>
             <div class="app-card-info">
-                <div class="app-card-title">${escapeHtml(label)}</div>
-                <div class="app-card-pkg">${escapeHtml(pkg)}</div>
+                <div class="app-card-title">${label}</div>
+                <div class="app-card-pkg">${pkg}</div>
             </div>`;
         fragment.appendChild(div);
     });
-    
     container.innerHTML = '';
     container.appendChild(fragment);
 }
-
-const debouncedFilter = debounce((val) => { 
-    if (allPackages.length > 0) renderAppList(val); 
-}, 300);
+const debouncedFilter = debounce((val) => { if (allPackages.length > 0) renderAppList(val); }, 300);
 
 // ================== KONFIGURASI ==================
 function checkInterlock() {
-    const auto = document.getElementById('powerSwitch')?.checked || false;
-    const custom = document.getElementById('customSaveSwitch')?.checked || false;
+    const auto = document.getElementById('powerSwitch').checked;
+    const custom = document.getElementById('customSaveSwitch').checked;
 
     const autoCard = document.getElementById('autoPowerCard');
     const customCard = document.getElementById('customPowerCard');
     const autoSw = document.getElementById('powerSwitch');
     const customSw = document.getElementById('customSaveSwitch');
 
-    if (autoCard && customCard && autoSw && customSw) {
-        if (auto) {
-            customCard.classList.add('disabled-state');
-            customSw.disabled = true;
-        } else {
-            customCard.classList.remove('disabled-state');
-            customSw.disabled = false;
-        }
+    if (auto) {
+        customCard.classList.add('disabled-state');
+        customSw.disabled = true;
+    } else {
+        customCard.classList.remove('disabled-state');
+        customSw.disabled = false;
+    }
 
-        if (custom) {
-            autoCard.classList.add('disabled-state');
-            autoSw.disabled = true;
-        } else {
-            autoCard.classList.remove('disabled-state');
-            autoSw.disabled = false;
-        }
+    if (custom) {
+        autoCard.classList.add('disabled-state');
+        autoSw.disabled = true;
+    } else {
+        autoCard.classList.remove('disabled-state');
+        autoSw.disabled = false;
     }
 }
 
 function handleAutoToggle(el) {
     if (el.checked) {
-        const customSw = document.getElementById('customSaveSwitch');
-        if (customSw) customSw.checked = false;
+        document.getElementById('customSaveSwitch').checked = false;
         toggleCustomSaveUI({ checked: false });
     }
     checkInterlock();
@@ -546,8 +312,7 @@ function handleAutoToggle(el) {
 
 function handleCustomToggle(el) {
     if (el.checked) {
-        const powerSw = document.getElementById('powerSwitch');
-        if (powerSw) powerSw.checked = false;
+        document.getElementById('powerSwitch').checked = false;
     }
     toggleCustomSaveUI(el);
     checkInterlock();
@@ -556,27 +321,23 @@ function handleCustomToggle(el) {
 
 function toggleCustomSaveUI(el) {
     const container = document.getElementById('customSaveContainer');
-    if (container) {
-        if (el.checked) container.classList.add('show'); 
-        else container.classList.remove('show');
-    }
+    if (el.checked) container.classList.add('show'); else container.classList.remove('show');
 }
 
 function handleBrutalToggle(el) {
     if (el.checked) {
-        document.getElementById('confirmModal')?.classList.add('show');
+        document.getElementById('confirmModal').classList.add('show');
     }
 }
 
 async function confirmBrutalAction() {
-    document.getElementById('confirmModal')?.classList.remove('show');
+    document.getElementById('confirmModal').classList.remove('show');
     openOpapsPage();
 }
 
 function cancelBrutalAction() {
-    document.getElementById('confirmModal')?.classList.remove('show');
-    const brutalSw = document.getElementById('brutalSwitch');
-    if (brutalSw) brutalSw.checked = false;
+    document.getElementById('confirmModal').classList.remove('show');
+    document.getElementById('brutalSwitch').checked = false;
 }
 
 async function handleDriverToggle(type) {
@@ -584,246 +345,139 @@ async function handleDriverToggle(type) {
     const angleEl = document.getElementById('angleSwitch');
     const gameEl = document.getElementById('gameSwitch');
     const devEl = document.getElementById('devSwitch');
-    
-    if (!angleEl || !gameEl || !devEl) return;
 
     if (type === 'game' && gameEl.checked) devEl.checked = false;
     if (type === 'dev' && devEl.checked) gameEl.checked = false;
 
-    if (angleEl.checked) { 
-        if (!currentAngleList.includes(pkg)) currentAngleList.push(pkg); 
-    } else { 
-        currentAngleList = currentAngleList.filter(p => p !== pkg); 
-    }
+    if (angleEl.checked) { if (!currentAngleList.includes(pkg)) currentAngleList.push(pkg); }
+    else { currentAngleList = currentAngleList.filter(p => p !== pkg); }
 
-    if (gameEl.checked) { 
-        if (!currentGameList.includes(pkg)) currentGameList.push(pkg); 
-    } else { 
-        currentGameList = currentGameList.filter(p => p !== pkg); 
-    }
+    if (gameEl.checked) { if (!currentGameList.includes(pkg)) currentGameList.push(pkg); }
+    else { currentGameList = currentGameList.filter(p => p !== pkg); }
 
-    if (devEl.checked) { 
-        if (!currentDevList.includes(pkg)) currentDevList.push(pkg); 
-    } else { 
-        currentDevList = currentDevList.filter(p => p !== pkg); 
-    }
+    if (devEl.checked) { if (!currentDevList.includes(pkg)) currentDevList.push(pkg); }
+    else { currentDevList = currentDevList.filter(p => p !== pkg); }
 
     await saveKyroosConfig();
 }
 
 async function handleWhitelistToggle(el) {
     const pkg = currentDetailPkg;
-    const cmd = el.checked ? 
-        `cmd deviceidle whitelist +${pkg}` : 
-        `cmd deviceidle whitelist -${pkg}`;
-    try {
-        await execShell(cmd);
-    } catch (e) {
-        console.error("Whitelist toggle error:", e);
-        el.checked = !el.checked;
-    }
+    const cmd = el.checked ? `cmd deviceidle whitelist +${pkg}` : `cmd deviceidle whitelist -${pkg}`;
+    await execShell(cmd);
 }
 
 async function fetchCurrentRes() {
     try {
         const sizeRaw = await execShell("wm size");
         const sizeMatch = sizeRaw.match(/(\d+)x(\d+)/);
-        const resW = document.getElementById('resW');
-        const resH = document.getElementById('resH');
-        
-        if (sizeMatch && resW && resH) {
-            resW.value = sizeMatch[1];
-            resH.value = sizeMatch[2];
+        if (sizeMatch) {
+            document.getElementById('resW').value = sizeMatch[1];
+            document.getElementById('resH').value = sizeMatch[2];
         }
-    } catch (e) { 
-        console.error("fetchCurrentRes error:", e);
-    }
+    } catch (e) { }
 }
 
 function toggleResUI(el) {
     const container = document.getElementById('resContainer');
-    if (!container) return;
-    
-    if (el.checked) { 
-        container.classList.add('show'); 
-        fetchCurrentRes(); 
-    } else { 
-        container.classList.remove('show'); 
-    }
+    if (el.checked) { container.classList.add('show'); fetchCurrentRes(); }
+    else { container.classList.remove('show'); }
 }
 
 async function applyResolution() {
-    const resW = document.getElementById('resW');
-    const resH = document.getElementById('resH');
-    
-    if (!resW || !resH) return;
-    
-    const w = resW.value;
-    const h = resH.value;
-    
+    const w = document.getElementById('resW').value;
+    const h = document.getElementById('resH').value;
     if (w && h) {
-        try {
-            await execShell(`wm size ${w}x${h}`);
-            const btn = document.querySelector('.btn-apply');
-            if (btn) {
-                const original = btn.innerHTML;
-                btn.innerHTML = `<span class="material-symbols-rounded">check</span> Applied!`;
-                setTimeout(() => btn.innerHTML = original, 1500);
-            }
-        } catch (e) {
-            console.error("applyResolution error:", e);
-            alert("Failed to apply resolution");
-        }
+        await execShell(`wm size ${w}x${h}`);
+        const btn = document.querySelector('.btn-apply');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = `<span class="material-symbols-rounded">check</span> Applied!`;
+        setTimeout(() => { btn.innerHTML = originalText; }, 1500);
     }
 }
 
 async function resetResolution() {
-    try {
-        await execShell("wm size reset");
-        fetchCurrentRes();
-    } catch (e) {
-        console.error("resetResolution error:", e);
-    }
+    await execShell("wm size reset");
+    fetchCurrentRes();
 }
 
 async function applyCustomSave() {
     const btn = document.querySelector('.btn-icon-apply');
-    if (!btn) return;
-    
     const oldColor = btn.style.backgroundColor;
     btn.style.backgroundColor = "var(--md-secondary-container)";
     btn.style.color = "var(--md-on-secondary-container)";
-    
-    try {
-        await saveKyroosConfig();
-    } catch (e) {
-        console.error("applyCustomSave error:", e);
-    }
-    
-    setTimeout(() => { 
-        btn.style.backgroundColor = oldColor; 
-        btn.style.color = ""; 
-    }, 500);
+    await saveKyroosConfig();
+    setTimeout(() => { btn.style.backgroundColor = oldColor; btn.style.color = ""; }, 500);
 }
 
 async function saveKyroosConfig() {
-    console.log("Saving config...");
-    
-    const deepSw = document.getElementById('deepSwitch');
-    const powerSw = document.getElementById('powerSwitch');
-    const cacheSw = document.getElementById('cacheSwitch');
-    const brutalSw = document.getElementById('brutalSwitch');
-    const customSaveSw = document.getElementById('customSaveSwitch');
-    const customSaveVal = document.getElementById('customSaveValue');
-    
-    const d = deepSw?.checked ? "on" : "off";
-    const p = powerSw?.checked ? "on" : "off";
-    const c = cacheSw?.checked ? "on" : "off";
-    const b = brutalSw?.checked ? "on" : "off";
-    
-    const isCustomOn = customSaveSw?.checked || false;
-    const customVal = customSaveVal?.value || "";
+    const d = document.getElementById('deepSwitch').checked ? "on" : "off";
+    const p = document.getElementById('powerSwitch').checked ? "on" : "off";
+    const c = document.getElementById('cacheSwitch').checked ? "on" : "off";
+    const b = document.getElementById('brutalSwitch').checked ? "on" : "off";
+    const isCustomOn = document.getElementById('customSaveSwitch').checked;
+    const customVal = document.getElementById('customSaveValue').value;
     const finalCustom = (isCustomOn && customVal) ? customVal : "off";
 
     const angleVal = cleanList(currentAngleList).join(',') || "none";
     const gameVal = cleanList(currentGameList).join(',') || "none";
     const devVal = cleanList(currentDevList).join(',') || "none";
 
-    try {
-        await execShell(`mkdir -p "$(dirname '${CONFIG_PATH}')" 2>/dev/null || true`);
-        
-        const configContent = [
-            `echo "deep=${d}" > "${CONFIG_PATH}"`,
-            `echo "power=${p}" >> "${CONFIG_PATH}"`,
-            `echo "chace=${c}" >> "${CONFIG_PATH}"`,
-            `echo "brutal=${b}" >> "${CONFIG_PATH}"`,
-            `echo "cossave=${finalCustom}" >> "${CONFIG_PATH}"`,
-            `echo "angle=${angleVal}" >> "${CONFIG_PATH}"`,
-            `echo "game=${gameVal}" >> "${CONFIG_PATH}"`,
-            `echo "dev=${devVal}" >> "${CONFIG_PATH}"`
-        ].join(' && ');
+    const commands = [
+        `echo "deep=${d}" > "${CONFIG_PATH}"`,
+        `echo "power=${p}" >> "${CONFIG_PATH}"`,
+        `echo "chace=${c}" >> "${CONFIG_PATH}"`,
+        `echo "brutal=${b}" >> "${CONFIG_PATH}"`,
+        `echo "cossave=${finalCustom}" >> "${CONFIG_PATH}"`,
+        `echo "angle=${angleVal}" >> "${CONFIG_PATH}"`,
+        `echo "game=${gameVal}" >> "${CONFIG_PATH}"`,
+        `echo "dev=${devVal}" >> "${CONFIG_PATH}"`
+    ];
 
-        await execShell(configContent);
+    await execShell(commands.join(' && '));
 
-        if (angleVal !== "none") {
-            await execShell(`settings put global angle_gl_driver_selection_pkgs "${angleVal}"`);
-            await execShell(`settings put global angle_gl_driver_selection_values "${angleVal.split(',').map(() => 'angle').join(',')}"`);
-        } else {
-            await execShell(`settings delete global angle_gl_driver_selection_pkgs 2>/dev/null || true`);
-            await execShell(`settings delete global angle_gl_driver_selection_values 2>/dev/null || true`);
-        }
-
-        if (gameVal !== "none") {
-            await execShell(`settings put global game_driver_opt_in_apps "${gameVal}"`);
-        } else {
-            await execShell(`settings delete global game_driver_opt_in_apps 2>/dev/null || true`);
-        }
-
-        if (devVal !== "none") {
-            await execShell(`settings put global game_driver_prerelease_opt_in_apps "${devVal}"`);
-        } else {
-            await execShell(`settings delete global game_driver_prerelease_opt_in_apps 2>/dev/null || true`);
-        }
-        
-        console.log("Config saved");
-    } catch (e) {
-        console.error("saveKyroosConfig error:", e);
-        throw e;
+    if (angleVal !== "none") {
+        await execShell(`settings put global angle_gl_driver_selection_pkgs "${angleVal}"`);
+        await execShell(`settings put global angle_gl_driver_selection_values "${angleVal.split(',').map(() => 'angle').join(',')}"`);
+    } else {
+        await execShell(`settings delete global angle_gl_driver_selection_pkgs`);
+        await execShell(`settings delete global angle_gl_driver_selection_values`);
     }
+
+    if (gameVal !== "none") await execShell(`settings put global game_driver_opt_in_apps "${gameVal}"`);
+    else await execShell(`settings delete global game_driver_opt_in_apps`);
+
+    if (devVal !== "none") await execShell(`settings put global game_driver_prerelease_opt_in_apps "${devVal}"`);
+    else await execShell(`settings delete global game_driver_prerelease_opt_in_apps`);
 }
 
 async function loadConfig() {
-    console.log("Loading config...");
-    
-    try {
-        const result = await execShell(`cat "${CONFIG_PATH}" 2>/dev/null || echo "FILE_NOT_FOUND"`);
-        const c = String(result || "");
-        
-        if (c === "FILE_NOT_FOUND" || c.includes("No such file") || c.trim() === "") {
-            console.log("No config file, using defaults");
-            return;
-        }
-        
-        if (c.startsWith("Error")) {
-            console.error("Error reading config:", c);
-            return;
-        }
-        
-        const deepSw = document.getElementById('deepSwitch');
-        const powerSw = document.getElementById('powerSwitch');
-        const cacheSw = document.getElementById('cacheSwitch');
-        const brutalSw = document.getElementById('brutalSwitch');
-        const customSaveSw = document.getElementById('customSaveSwitch');
-        const customSaveVal = document.getElementById('customSaveValue');
-        const customContainer = document.getElementById('customSaveContainer');
-        
-        if (deepSw) deepSw.checked = c.includes('deep=on');
-        if (powerSw) powerSw.checked = c.includes('power=on');
-        if (cacheSw) cacheSw.checked = c.includes('chace=on');
-        if (brutalSw) brutalSw.checked = c.includes('brutal=on');
+    const c = await execShell(`cat ${CONFIG_PATH}`);
+    if (c && !c.startsWith("Error")) {
+        document.getElementById('deepSwitch').checked = c.includes('deep=on');
+        document.getElementById('powerSwitch').checked = c.includes('power=on');
+        document.getElementById('cacheSwitch').checked = c.includes('chace=on');
+        document.getElementById('brutalSwitch').checked = c.includes('brutal=on');
 
-        const matchS = c.match(/cossave=(\S+)/);
-        if (matchS && matchS[1] !== 'off' && customSaveSw && customSaveVal && customContainer) {
-            customSaveSw.checked = true;
-            customContainer.classList.add('show');
-            customSaveVal.value = matchS[1];
-        } else if (customSaveSw) {
-            customSaveSw.checked = false;
+        const matchS = c.match(/cossave=(\w+)/);
+        if (matchS && matchS[1] !== 'off') {
+            document.getElementById('customSaveSwitch').checked = true;
+            document.getElementById('customSaveContainer').classList.add('show');
+            document.getElementById('customSaveValue').value = matchS[1];
+        } else {
+            document.getElementById('customSaveSwitch').checked = false;
         }
 
         const matchA = c.match(/angle=([^\n]+)/);
-        currentAngleList = (matchA && matchA[1] !== 'none') ? matchA[1].split(',') : [];
+        currentAngleList = matchA && matchA[1] !== 'none' ? matchA[1].split(',') : [];
 
         const matchG = c.match(/game=([^\n]+)/);
-        currentGameList = (matchG && matchG[1] !== 'none') ? matchG[1].split(',') : [];
+        currentGameList = matchG && matchG[1] !== 'none' ? matchG[1].split(',') : [];
 
         const matchD = c.match(/dev=([^\n]+)/);
-        currentDevList = (matchD && matchD[1] !== 'none') ? matchD[1].split(',') : [];
+        currentDevList = matchD && matchD[1] !== 'none' ? matchD[1].split(',') : [];
 
         checkInterlock();
-        console.log("Config loaded");
-    } catch (e) {
-        console.error("loadConfig error:", e);
     }
 }
 
@@ -832,15 +486,14 @@ let opapsPackages = [];
 let selectedOpapsPkg = "";
 
 function openOpapsPage() {
-    document.getElementById('opapsPage')?.classList.add('open');
-    document.getElementById('mainNav')?.classList.add('hidden');
+    document.getElementById('opapsPage').classList.add('open');
+    document.getElementById('mainNav').classList.add('hidden');
 }
 
 function closeOpapsPage() {
-    document.getElementById('opapsPage')?.classList.remove('open');
-    document.getElementById('mainNav')?.classList.remove('hidden');
-    const brutalSw = document.getElementById('brutalSwitch');
-    if (brutalSw) brutalSw.checked = false;
+    document.getElementById('opapsPage').classList.remove('open');
+    document.getElementById('mainNav').classList.remove('hidden');
+    document.getElementById('brutalSwitch').checked = false;
 }
 
 async function startOpapsScan() {
@@ -848,48 +501,35 @@ async function startOpapsScan() {
     isScanning = true;
 
     const btn = document.querySelector('#opapsInitState .btn-scan');
-    const originalText = btn?.innerHTML;
-    
-    if (btn) {
-        btn.innerHTML = '<span class="material-symbols-rounded" style="animation: spin 1s linear infinite;">refresh</span> Scanning...';
-        btn.disabled = true;
-    }
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-rounded" style="animation: spin 1s linear infinite;">refresh</span> Scanning...';
+    btn.disabled = true;
 
     try {
-        let raw = "";
-        
-        try {
-            raw = await execShell("cmd package list packages -3 -u 2>/dev/null");
-        } catch (e) {}
-        
-        if (!raw || raw.trim() === "") {
-            raw = await execShell("pm list packages -3 -u");
+        let raw = await execShell("cmd package list packages -3 -u");
+        if (!raw || raw.startsWith("Error")) {
+            raw = await execShell("/system/bin/pm list packages -3 -u");
         }
-        
         const regex = /package:([^\s]+)/g;
         let rawList = [];
         let match;
-        
         while ((match = regex.exec(raw)) !== null) {
             rawList.push(match[1]);
         }
 
-        opapsPackages = cleanList(rawList).filter(p => !p.includes("overlay"));
+        opapsPackages = cleanList(rawList).filter(p => !p.startsWith("com.android.overlay") && !p.startsWith("com.google.android.overlay"));
         opapsPackages.sort();
 
         await loadLabels(opapsPackages);
 
-        document.getElementById('opapsInitState')?.style.setProperty('display', 'none');
-        document.getElementById('opapsSearch')?.classList.add('show');
+        document.getElementById('opapsInitState').style.display = 'none';
+        document.getElementById('opapsSearch').classList.add('show');
         renderOpapsList();
     } catch (e) {
-        console.error("startOpapsScan error:", e);
         alert("Failed to scan apps: " + e);
     } finally {
-        if (btn) {
-            btn.innerHTML = originalText || 'Scan';
-            btn.disabled = false;
-        }
+        btn.innerHTML = originalText;
+        btn.disabled = false;
         isScanning = false;
     }
 }
@@ -897,30 +537,28 @@ async function startOpapsScan() {
 function renderOpapsList(filter = '') {
     const container = document.getElementById('opaps-list-target');
     const countInfo = document.getElementById('opaps-count-info');
-    
-    if (!container) return;
-    
     const filterLower = filter.toLowerCase();
-    const filtered = opapsPackages.filter(pkg => {
-        const label = (infoCache[pkg]?.label || "").toLowerCase();
-        return pkg.toLowerCase().includes(filterLower) || label.includes(filterLower);
-    });
 
-    if (countInfo) {
-        countInfo.textContent = `${filtered.length} user apps found`;
-        countInfo.style.display = 'block';
-    }
+    const filtered = opapsPackages.filter(pkg =>
+        pkg.toLowerCase().includes(filterLower) ||
+        (infoCache[pkg]?.label || '').toLowerCase().includes(filterLower)
+    );
+
+    countInfo.textContent = `${filtered.length} user apps found`;
+    countInfo.style.display = 'block';
 
     if (filtered.length === 0) {
-        container.innerHTML = '<div style="text-align:center; opacity:0.5; padding:20px;">No apps</div>';
+        container.innerHTML = '<div style="text-align:center; opacity:0.5; padding:20px;">No matching apps</div>';
         return;
     }
 
-    const limit = filter === '' ? 100 : filtered.length;
+    const renderLimit = filter === '' ? 100 : filtered.length;
     const fragment = document.createDocumentFragment();
 
-    filtered.slice(0, limit).forEach(pkg => {
-        const label = infoCache[pkg]?.label || pkg;
+    filtered.slice(0, renderLimit).forEach(pkg => {
+        const cached = infoCache[pkg];
+        const label = cached?.label || pkg;
+
         const div = document.createElement('div');
         div.className = 'app-card-item';
         div.onclick = () => executeOpapsForApp(pkg);
@@ -930,30 +568,26 @@ function renderOpapsList(filter = '') {
                 <span class="material-symbols-rounded">android</span>
             </div>
             <div class="app-card-info">
-                <div class="app-card-title">${escapeHtml(label)}</div>
-                <div class="app-card-pkg">${escapeHtml(pkg)}</div>
+                <div class="app-card-title">${label}</div>
+                <div class="app-card-pkg">${pkg}</div>
             </div>
             <span class="material-symbols-rounded" style="color: var(--md-outline); font-size: 20px;">play_circle</span>`;
         fragment.appendChild(div);
     });
-    
     container.innerHTML = '';
     container.appendChild(fragment);
 }
 
-const debouncedOpapsFilter = debounce((val) => { 
-    if (opapsPackages.length > 0) renderOpapsList(val); 
-}, 300);
+const debouncedOpapsFilter = debounce((val) => { if (opapsPackages.length > 0) renderOpapsList(val); }, 300);
 
 function executeOpapsForApp(pkg) {
     selectedOpapsPkg = pkg;
-    const targetEl = document.getElementById('opapsTargetPkg');
-    if (targetEl) targetEl.innerText = pkg;
-    document.getElementById('opapsConfirmModal')?.classList.add('show');
+    document.getElementById('opapsTargetPkg').innerText = pkg;
+    document.getElementById('opapsConfirmModal').classList.add('show');
 }
 
 function closeOpapsConfirm() {
-    document.getElementById('opapsConfirmModal')?.classList.remove('show');
+    document.getElementById('opapsConfirmModal').classList.remove('show');
     selectedOpapsPkg = "";
 }
 
@@ -964,87 +598,24 @@ async function runOpapsConfirmed() {
     closeOpapsConfirm();
 
     try {
-        await execShell(`nohup opaps ${pkg} > /dev/null 2>&1 &`);
+        await execShell(`nohup opaps ${pkg}`);
         alert(`Success! Opaps applied to ${pkg}.`);
     } catch (e) {
-        console.error("runOpapsConfirmed error:", e);
-        alert(`Failed: ${e}`);
+        alert(`Failed to execute Opaps: ${e}`);
     }
 
     closeOpapsPage();
 }
 
 // ================== INIT ==================
-window.onload = async function () {
-    console.log("=== KyrooS Initializing ===");
-    console.log("adbCallback defined:", typeof window.adbCallback);
-    
-    // Tunggu WebView interface siap
-    await new Promise(r => setTimeout(r, 1000));
-    
-    // Cek KyroosApp dengan retry
-    let retries = 0;
-    while (typeof KyroosApp === 'undefined' && retries < 20) {
-        console.log("Waiting for KyroosApp...", retries);
-        await new Promise(r => setTimeout(r, 300));
-        retries++;
-    }
-    
-    if (typeof KyroosApp === 'undefined') {
-        console.error("KyroosApp not found after retries!");
-        const statusEl = document.getElementById('statusTitle');
-        if (statusEl) statusEl.innerText = "ADB Error";
-        return;
-    }
-    
-    console.log("KyroosApp ready, executeShell:", typeof KyroosApp.executeShell);
-    
-    // Test ADB dengan perintah simple
-    try {
-        console.log("Testing ADB...");
-        const test = await execShell("echo 'ADB_TEST'");
-        console.log("ADB test result:", test.trim());
-    } catch (e) {
-        console.error("ADB test failed:", e);
-    }
-    
+window.onload = function () {
     const appConfig = localStorage.getItem('advAppConfig') === 'true';
-    const appConfigSw = document.getElementById('appConfigSwitch');
-    const navApps = document.getElementById('nav-apps');
-    const mainNav = document.getElementById('mainNav');
-    
-    if (appConfigSw) appConfigSw.checked = appConfig;
-    
+    document.getElementById('appConfigSwitch').checked = appConfig;
     if (appConfig) {
-        navApps?.classList.remove('hidden-tab');
-        mainNav?.classList.add('wide');
+        document.getElementById('nav-apps').classList.remove('hidden-tab');
+        document.getElementById('mainNav').classList.add('wide');
     }
-    
-    // Jalankan fungsi secara berurutan
-    try {
-        await updateHomeData();
-        console.log("✓ Home data");
-    } catch(e) {
-        console.error("✗ Home data:", e);
-    }
-    
-    await new Promise(r => setTimeout(r, 500));
-    
-    try {
-        await loadConfig();
-        console.log("✓ Config loaded");
-    } catch(e) {
-        console.error("✗ Config:", e);
-    }
-    
-    await new Promise(r => setTimeout(r, 500));
-    
-    try {
-        await fetchCurrentRes();
-        console.log("✓ Resolution");
-    } catch(e) {
-        console.error("✗ Resolution:", e);
-    }
-    
-    console.log("=== Init Complete ===");
+    updateHomeData();
+    loadConfig();
+    fetchCurrentRes();
 };

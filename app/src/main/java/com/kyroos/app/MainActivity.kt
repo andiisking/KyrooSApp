@@ -8,11 +8,10 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Base64
 import android.util.Log
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -24,22 +23,17 @@ import frb.axeron.adb.AdbClient
 import frb.axeron.adb.AdbKey
 import frb.axeron.adb.AdbPairingService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.util.concurrent.ConcurrentHashMap
+import java.net.SocketTimeoutException
 
 class MainActivity : AppCompatActivity() {
     internal lateinit var webView: WebView
-    private var isReceiverRegistered = false
-    internal val activeClients = ConcurrentHashMap<String, AdbClient>()
     
-    // Handler untuk main thread
-    private val mainHandler = Handler(Looper.getMainLooper())
-
+    private var isReceiverRegistered = false
+    
     private val pairingReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -48,18 +42,19 @@ class MainActivity : AppCompatActivity() {
                     if (port != -1) {
                         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
                         prefs.edit().putInt("paired_port", port).apply()
-
+                        
                         Toast.makeText(this@MainActivity, 
                             "Pairing berhasil! Port: $port", 
                             Toast.LENGTH_LONG).show()
-
-                        runOnUiThread {
+                        
+                        if (::webView.isInitialized) {
                             webView.evaluateJavascript(
                                 "if(window.onPairingSuccess) window.onPairingSuccess($port)", 
                                 null
                             )
                         }
 
+                        // Setelah pairing sukses, verifikasi koneksi
                         verifyStoredPort()
                     }
                 }
@@ -82,16 +77,17 @@ class MainActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             allowFileAccess = true
-            javaScriptCanOpenWindowsAutomatically = true
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            WebView.setWebContentsDebuggingEnabled(true)
+        // ✅ TAMBAHKAN WebChromeClient untuk menangkap console.log dari JavaScript
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                Log.d("JS_Console", "${message.message()} -- Dari baris ${message.lineNumber()} dari ${message.sourceId()}")
+                return true
+            }
         }
         
         webView.webViewClient = WebViewClient()
-        
-        // PENTING: Tambah interface SEBELUM load URL
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
         webView.loadUrl("file:///android_asset/index.html")
 
@@ -99,7 +95,7 @@ class MainActivity : AppCompatActivity() {
             addAction(AdbPairingService.PAIRING_SUCCESS_ACTION)
             addAction(AdbPairingService.PAIRING_FAILED_ACTION)
         }
-
+        
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(pairingReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -116,21 +112,18 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Setiap kali activity dilanjutkan, periksa apakah port tersimpan masih valid
         verifyStoredPort()
     }
-
+    
     override fun onDestroy() {
         super.onDestroy()
-        
-        activeClients.forEach { (_, client) ->
-            try { client.close() } catch (_: Exception) {}
-        }
-        activeClients.clear()
-        
         if (isReceiverRegistered) {
             try {
                 unregisterReceiver(pairingReceiver)
-            } catch (_: IllegalArgumentException) {}
+            } catch (e: IllegalArgumentException) {
+                // Receiver sudah unregistered, ignore
+            }
         }
     }
 
@@ -173,8 +166,9 @@ class MainActivity : AppCompatActivity() {
     private fun startPairing() {
         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val pairedPort = prefs.getInt("paired_port", -1)
-
+        
         if (pairedPort == -1) {
+            // Tidak ada port tersimpan, mulai pairing service
             val intent = AdbPairingService.startIntent(this)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)
@@ -182,11 +176,16 @@ class MainActivity : AppCompatActivity() {
                 startService(intent)
             }
         } else {
-            Toast.makeText(this, "Menggunakan port: $pairedPort", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Menggunakan port tersimpan: $pairedPort", Toast.LENGTH_SHORT).show()
+            // Verifikasi apakah port masih aktif
             verifyStoredPort()
         }
     }
 
+    /**
+     * Memeriksa apakah port yang tersimpan masih dapat dijangkau.
+     * Jika tidak, hapus dari preferences dan mulai pairing ulang.
+     */
     internal fun verifyStoredPort() {
         val prefs = getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val port = prefs.getInt("paired_port", -1)
@@ -196,173 +195,162 @@ class MainActivity : AppCompatActivity() {
             val reachable = isPortReachable(port)
             withContext(Dispatchers.Main) {
                 if (!reachable) {
-                    Log.w("MainActivity", "Port $port not reachable, restarting pairing")
+                    Log.w("MainActivity", "Stored port $port is not reachable, clearing and restarting pairing")
                     prefs.edit().remove("paired_port").apply()
                     Toast.makeText(this@MainActivity, 
-                        "ADB terputus, pairing ulang...", 
+                        "Koneksi ADB terputus, memulai pairing ulang...", 
                         Toast.LENGTH_LONG).show()
-                    startPairing()
+                    startPairing() // ini akan memulai service karena port sudah -1
                 } else {
-                    Log.d("MainActivity", "Port $port ready")
-                    // Delay sedikit agar JS siap
-                    mainHandler.postDelayed({
-                        webView.evaluateJavascript(
-                            "if(window.onAdbReady) window.onAdbReady($port)", 
-                            null
-                        )
-                    }, 500)
+                    Log.d("MainActivity", "Stored port $port is reachable")
                 }
             }
         }
     }
 
-    private suspend fun isPortReachable(port: Int, timeoutMs: Int = 2000): Boolean = 
-        withContext(Dispatchers.IO) {
-            try {
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
-                    true
-                }
-            } catch (_: Exception) {
-                false
+    /**
+     * Coba sambung ke localhost:port dengan timeout 2000ms.
+     * Jika berhasil (socket connected), anggap port aktif.
+     */
+    private suspend fun isPortReachable(port: Int, timeoutMs: Int = 2000): Boolean = withContext(Dispatchers.IO) {
+        return@withContext try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
+                true
             }
-        }
-
-    // Method untuk kirim callback ke JS dengan aman
-    fun sendJsCallback(callbackId: String, base64Result: String, isError: Boolean) {
-        mainHandler.post {
-            try {
-                // Escape single quotes
-                val safeId = callbackId.replace("'", "\\'")
-                val safeBase64 = base64Result.replace("'", "\\'")
-                
-                val js = "javascript:if(window.adbCallback){window.adbCallback('$safeId','$safeBase64',$isError)}else{console.error('adbCallback not found')}"
-                
-                webView.evaluateJavascript(js) { result ->
-                    Log.d("MainActivity", "Callback result: $result")
-                }
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Failed to send callback: ${e.message}")
-            }
+        } catch (e: SocketTimeoutException) {
+            false
+        } catch (e: Exception) {
+            false
         }
     }
 }
 
-class KyroosAdbInterface(private val activity: MainActivity) {
-
+class KyroosAdbInterface(private val context: Context) {
+    
+    /**
+     * Method untuk eksekusi shell command (SYNC - return langsung)
+     * Digunakan oleh JavaScript yang memanggil: KyroosApp.executeShell(cmd)
+     */
     @JavascriptInterface
     fun executeShell(command: String): String {
-        Log.d("KyroosAdb", "Sync: ${command.take(50)}")
-
-        val prefs = activity.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        Log.d("KyroosAdb", "executeShell (sync) called: $command")
+        
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val port = prefs.getInt("paired_port", -1)
-
-        if (port == -1) return "Error: Belum dipairing!"
+        
+        if (port == -1) {
+            return "Error: Perangkat belum dipairing!"
+        }
 
         return try {
-            val key = AdbKey(activity, "kyroos_device") 
+            val key = AdbKey(context, "kyroos_device") 
             val client = AdbClient(key, port, "127.0.0.1")
+            
             client.connect() 
             val stream = client.open("shell:$command")
             val result = stream.readAll().toString(Charsets.UTF_8)
+            
             stream.close()
             client.close()
+            Log.d("KyroosAdb", "Result: $result")
             result
         } catch (e: Exception) {
-            Log.e("KyroosAdb", "Sync error: ${e.message}")
-            handleConnectionError(e)
+            Log.e("KyroosAdb", "executeShell error: ${e.message}")
+            // Jika gagal karena koneksi, coba verifikasi port lagi
+            if (e.message?.contains("Connection refused") == true) {
+                (context as? MainActivity)?.verifyStoredPort()
+            }
             "Error: ${e.message}"
         }
     }
-
+    
+    /**
+     * Method untuk eksekusi shell command (ASYNC dengan callback)
+     * Digunakan oleh JavaScript yang memanggil: KyroosApp.executeShell(cmd, callbackId)
+     */
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
-        Log.d("KyroosAdb", "Async: ${command.take(50)}, ID: $callbackId")
-
-        val prefs = activity.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        Log.d("KyroosAdb", "executeShell (async) called: $command, callbackId: $callbackId")
+        
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         val port = prefs.getInt("paired_port", -1)
-
+        
         if (port == -1) {
-            activity.sendJsCallback(callbackId, 
-                Base64.encodeToString("Error: Belum dipairing".toByteArray(), Base64.NO_WRAP), 
-                true)
+            (context as? MainActivity)?.runOnUiThread {
+                (context as? MainActivity)?.webView?.evaluateJavascript(
+                    "if(window.adbCallback) window.adbCallback('$callbackId', 'Error: Belum dipairing', true)",
+                    null
+                )
+            }
             return
         }
 
-        activity.lifecycleScope.launch(Dispatchers.IO) {
-            var result = ""
-            var isError = false
-            
-            try {
-                withTimeout(20000) {
-                    val key = AdbKey(activity, "kyroos_device") 
-                    val client = AdbClient(key, port, "127.0.0.1")
-                    
-                    activity.activeClients[callbackId] = client
-                    
-                    try {
-                        client.connect() 
-                        val stream = client.open("shell:$command")
-                        result = stream.readAll().toString(Charsets.UTF_8)
-                        stream.close()
-                    } finally {
-                        client.close()
-                        activity.activeClients.remove(callbackId)
+        (context as? MainActivity)?.lifecycleScope?.launch(Dispatchers.IO) {
+            val result = try {
+                val key = AdbKey(context, "kyroos_device") 
+                val client = AdbClient(key, port, "127.0.0.1")
+                
+                client.connect() 
+                val stream = client.open("shell:$command")
+                val output = stream.readAll().toString(Charsets.UTF_8)
+                
+                stream.close()
+                client.close()
+                Log.d("KyroosAdb", "Result for $callbackId: $output")
+                output
+            } catch (e: Exception) {
+                Log.e("KyroosAdb", "Async error: ${e.message}")
+                // Jika gagal koneksi, beri sinyal ke UI untuk verifikasi ulang
+                if (e.message?.contains("Connection refused") == true) {
+                    withContext(Dispatchers.Main) {
+                        (context as? MainActivity)?.verifyStoredPort()
                     }
                 }
-            } catch (e: TimeoutCancellationException) {
-                isError = true
-                result = "Error: Timeout (20s)"
-                Log.e("KyroosAdb", "Timeout: $command")
-            } catch (e: Exception) {
-                isError = true
-                result = "Error: ${e.message}"
-                Log.e("KyroosAdb", "Error: ${e.message}")
-                handleConnectionError(e)
+                "Error: ${e.message}"
             }
-
-            // Kirim callback ke main thread
-            val base64Result = Base64.encodeToString(
-                result.toByteArray(Charsets.UTF_8), 
-                Base64.NO_WRAP
-            )
             
-            activity.sendJsCallback(callbackId, base64Result, isError)
-        }
-    }
-
-    private fun handleConnectionError(e: Exception) {
-        if (e.message?.contains("Connection refused") == true || 
-            e.message?.contains("Broken pipe") == true ||
-            e.message?.contains("reset by peer") == true) {
-            activity.runOnUiThread {
-                activity.verifyStoredPort()
+            withContext(Dispatchers.Main) {
+                val escapedResult = result.replace("'", "\\'").replace("\n", "\\n")
+                (context as? MainActivity)?.webView?.evaluateJavascript(
+                    "if(window.adbCallback) window.adbCallback('$callbackId', '$escapedResult', false)",
+                    null
+                )
             }
         }
     }
-
+    
+    /**
+     * Method untuk eksekusi shell command (SYNC - return langsung)
+     * Alias dari executeShell(command: String) untuk kompatibilitas
+     */
+    @JavascriptInterface
+    fun executeShellSync(command: String): String {
+        return executeShell(command)
+    }
+    
     @JavascriptInterface
     fun isPaired(): Boolean {
-        val prefs = activity.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         return prefs.getInt("paired_port", -1) != -1
     }
-
+    
     @JavascriptInterface
     fun getPairedPort(): Int {
-        val prefs = activity.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         return prefs.getInt("paired_port", -1)
     }
-
+    
     @JavascriptInterface
     fun resetPairing() {
-        val prefs = activity.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("adb_prefs", Context.MODE_PRIVATE)
         prefs.edit().remove("paired_port").apply()
-
-        val intent = AdbPairingService.startIntent(activity)
+        
+        val intent = AdbPairingService.startIntent(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            activity.startForegroundService(intent)
+            context.startForegroundService(intent)
         } else {
-            activity.startService(intent)
+            context.startService(intent)
         }
     }
 }
