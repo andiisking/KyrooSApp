@@ -12,6 +12,5 @@ class KyroosApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        // HAPUS semua kode libsu - kita pakai Shizuku langsung
     }
 }

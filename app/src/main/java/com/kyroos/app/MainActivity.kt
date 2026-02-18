@@ -2,9 +2,14 @@ package com.kyroos.app
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
+import android.util.DisplayMetrics
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -26,8 +31,11 @@ class MainActivity : AppCompatActivity() {
     internal lateinit var context: Context
     
     internal val SHIZUKU_PERMISSION_CODE = 1001
+    internal val STORAGE_PERMISSION_CODE = 1002
+    
     internal var isShizukuAvailable = false
     internal var isShizukuPermissionGranted = false
+    internal var isStoragePermissionGranted = false
     
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
@@ -35,12 +43,6 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (isShizukuPermissionGranted) {
                     Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
-                    webView.evaluateJavascript(
-                        "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
-                        null
-                    )
-                } else {
-                    Toast.makeText(this, "❌ Shizuku Denied", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -54,7 +56,7 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         
         setupWebView()
-        checkNotificationPermission()
+        checkPermissions()
         setupShizuku()
     }
     
@@ -64,9 +66,6 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             allowFileAccess = true
             allowContentAccess = true
-            setSupportZoom(false)
-            builtInZoomControls = false
-            displayZoomControls = false
             loadsImagesAutomatically = true
             loadWithOverviewMode = true
             useWideViewPort = true
@@ -79,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                Log.d("WebView", "${message.message()} (${message.lineNumber()})")
+                Log.d("WebView", message.message())
                 return true
             }
         }
@@ -88,156 +87,153 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
     
-    override fun onResume() {
-        super.onResume()
-        checkShizukuStatus()
+    private fun checkPermissions() {
+        // Cek Storage Permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                requestManageStoragePermission()
+            } else {
+                isStoragePermissionGranted = true
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) 
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+                    STORAGE_PERMISSION_CODE
+                )
+            } else {
+                isStoragePermissionGranted = true
+            }
+        }
+        
+        // Cek Notification Permission (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
     }
     
-    override fun onDestroy() {
-        super.onDestroy()
+    private fun requestManageStoragePermission() {
         try {
-            Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
-        } catch (e: Exception) { }
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            intent.data = Uri.parse("package:$packageName")
+            startActivityForResult(intent, STORAGE_PERMISSION_CODE)
+        } catch (e: Exception) {
+            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+            startActivityForResult(intent, STORAGE_PERMISSION_CODE)
+        }
     }
-
+    
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == STORAGE_PERMISSION_CODE) {
+            isStoragePermissionGranted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        }
     }
-
-    private fun checkNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
-                != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(
-                    this, 
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS), 
-                    101
-                )
-            }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == STORAGE_PERMISSION_CODE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            isStoragePermissionGranted = Environment.isExternalStorageManager()
         }
     }
     
     private fun setupShizuku() {
         try {
             Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-            checkShizukuStatus()
+            if (Shizuku.pingBinder()) {
+                isShizukuAvailable = true
+                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                    Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
+                } else {
+                    isShizukuPermissionGranted = true
+                }
+            }
         } catch (e: Exception) {
             Log.e("Shizuku", "Setup error", e)
         }
     }
     
-    private fun checkShizukuStatus() {
-        try {
-            if (Shizuku.pingBinder()) {
-                Log.d("Shizuku", "✅ Shizuku connected")
-                isShizukuAvailable = true
-                
-                val permission = Shizuku.checkSelfPermission()
-                if (permission == PackageManager.PERMISSION_GRANTED) {
-                    isShizukuPermissionGranted = true
-                    onShizukuReady()
-                } else {
-                    Log.d("Shizuku", "Requesting permission...")
-                    Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
-                }
-            } else {
-                Log.e("Shizuku", "❌ Shizuku not running")
-                isShizukuAvailable = false
-                showShizukuError("Shizuku is not running")
-            }
-        } catch (e: Exception) {
-            Log.e("Shizuku", "Error checking status", e)
-            isShizukuAvailable = false
-        }
-    }
-    
-    private fun showShizukuError(message: String) {
-        runOnUiThread {
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        }
-    }
-    
-    private fun onShizukuReady() {
-        Log.d("Shizuku", "✅ Shizuku ready!")
-        runOnUiThread {
-            Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    // ========== FUNGSI UNTUK JS ==========
+    // ========== EKSEKUSI SHELL ==========
     
     fun executeShell(command: String, callbackId: String) {
-        Log.d("Shell", "🚀 Executing: $command")
-        
         Thread {
             try {
-                // Handle wm command
-                val finalCommand = when {
-                    command.startsWith("wm") -> command.replace("wm", "cmd window")
-                    else -> command
-                }
-                
-                val process = Runtime.getRuntime().exec(finalCommand.split(" ").toTypedArray())
-                
-                // Baca output
-                val reader = BufferedReader(InputStreamReader(process.inputStream))
-                val output = StringBuilder()
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    output.append(line).append("\n")
-                }
-                
-                // Baca error
-                val errorReader = BufferedReader(InputStreamReader(process.errorStream))
-                val error = StringBuilder()
-                while (errorReader.readLine().also { line = it } != null) {
-                    error.append(line).append("\n")
-                }
-                
-                val exitCode = process.waitFor()
-                
                 val result = when {
-                    command.startsWith("pgrep") && exitCode == 1 -> ""  // pgrep tidak menemukan proses
-                    exitCode == 0 || output.isNotEmpty() -> output.toString().trim()
-                    else -> error.toString().trim()
+                    command.startsWith("wm size") -> getWmSizeFromDisplay()
+                    
+                    // KHUSUS UNTUK SETTINGS COMMAND - PAKAI SHIZUKU
+                    command.startsWith("settings") -> {
+                        if (isShizukuAvailable && isShizukuPermissionGranted) {
+                            executeWithShizuku(command)
+                        } else {
+                            "Error: Shizuku diperlukan untuk mengubah settings"
+                        }
+                    }
+                    
+                    // KHUSUS UNTUK WM COMMAND LAINNYA
+                    command.startsWith("wm") -> {
+                        if (isShizukuAvailable && isShizukuPermissionGranted) {
+                            executeWithShizuku("cmd window ${command.substring(3)}")
+                        } else {
+                            "Error: Shizuku diperlukan untuk wm command"
+                        }
+                    }
+                    
+                    // KHUSUS UNTUK DEVICEIDLE WHITELIST
+                    command.startsWith("cmd deviceidle") -> {
+                        if (isShizukuAvailable && isShizukuPermissionGranted) {
+                            executeWithShizuku(command)
+                        } else {
+                            "Error: Shizuku diperlukan untuk deviceidle"
+                        }
+                    }
+                    
+                    command.startsWith("pgrep") -> {
+                        val process = Runtime.getRuntime().exec(command.split(" ").toTypedArray())
+                        val reader = BufferedReader(InputStreamReader(process.inputStream))
+                        val output = StringBuilder()
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            output.append(line).append("\n")
+                        }
+                        process.waitFor()
+                        output.toString().trim()
+                    }
+                    
+                    else -> executeWithRuntime(command)
                 }
-                
-                Log.d("Shell", "✅ Result: ${result.take(100)}...")
                 
                 runOnUiThread {
-                    val escaped = result
-                        .replace("\\", "\\\\")
-                        .replace("'", "\\'")
-                        .replace("\n", "\\n")
-                        .replace("\r", "\\r")
-                    
-                    val jsCode = "window.shellCallback('$callbackId', '$escaped', false)"
-                    webView.evaluateJavascript(jsCode, null)
+                    val escaped = result.replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+                    webView.evaluateJavascript("window.shellCallback('$callbackId', '$escaped', false)", null)
                 }
                 
             } catch (e: Exception) {
-                Log.e("Shell", "❌ Error: ${e.message}")
                 runOnUiThread {
-                    val jsCode = "window.shellCallback('$callbackId', 'Error: ${e.message}', true)"
-                    webView.evaluateJavascript(jsCode, null)
+                    webView.evaluateJavascript("window.shellCallback('$callbackId', 'Error: ${e.message}', true)", null)
                 }
             }
         }.start()
     }
     
-    fun executeShellSync(command: String): String {
+    private fun getWmSizeFromDisplay(): String {
+        val metrics = DisplayMetrics()
+        windowManager.defaultDisplay.getMetrics(metrics)
+        return "Physical size: ${metrics.widthPixels}x${metrics.heightPixels}"
+    }
+    
+    private fun executeWithRuntime(command: String): String {
         return try {
-            val finalCommand = when {
-                command.startsWith("wm") -> command.replace("wm", "cmd window")
-                else -> command
-            }
-            
-            val process = Runtime.getRuntime().exec(finalCommand.split(" ").toTypedArray())
-            
+            val process = Runtime.getRuntime().exec(command.split(" ").toTypedArray())
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
             var line: String?
@@ -253,63 +249,66 @@ class MainActivity : AppCompatActivity() {
             
             val exitCode = process.waitFor()
             
-            when {
-                command.startsWith("pgrep") && exitCode == 1 -> ""
-                exitCode == 0 || output.isNotEmpty() -> output.toString().trim()
-                else -> error.toString().trim()
+            if (exitCode == 0 || output.isNotEmpty()) {
+                output.toString().trim()
+            } else {
+                error.toString().trim()
             }
         } catch (e: Exception) {
             "Error: ${e.message}"
         }
     }
     
-    fun isShizukuAvailable(): Boolean {
-        return isShizukuAvailable && isShizukuPermissionGranted
+    private fun executeWithShizuku(command: String): String {
+        return try {
+            val process = Shizuku.newProcess(command.split(" ").toTypedArray(), null, null)
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val output = StringBuilder()
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                output.append(line).append("\n")
+            }
+            process.waitFor()
+            output.toString().trim()
+        } catch (e: Exception) {
+            "Shizuku error: ${e.message}"
+        }
     }
     
-    fun getShizukuStatus(): String {
-        return when {
-            !isShizukuAvailable -> "not_installed"
-            !isShizukuPermissionGranted -> "no_permission"
-            else -> "ready"
+    fun executeShellSync(command: String): String {
+        return if (command.startsWith("wm size")) {
+            getWmSizeFromDisplay()
+        } else {
+            executeWithRuntime(command)
         }
+    }
+    
+    fun isShizukuAvailable(): Boolean = isShizukuAvailable && isShizukuPermissionGranted
+    fun canAccessSettings(): Boolean = isShizukuAvailable && isShizukuPermissionGranted
+    
+    fun getShizukuStatus(): String = when {
+        !isShizukuAvailable -> "not_installed"
+        !isShizukuPermissionGranted -> "no_permission"
+        else -> "ready"
     }
     
     fun requestShizukuPermission() {
-        runOnUiThread {
-            if (!isShizukuAvailable) {
-                Toast.makeText(this, "Shizuku not running", Toast.LENGTH_SHORT).show()
-            } else if (!isShizukuPermissionGranted) {
-                Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
-            }
+        if (isShizukuAvailable && !isShizukuPermissionGranted) {
+            Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
+        } else if (!isShizukuAvailable) {
+            Toast.makeText(this, "Shizuku tidak berjalan", Toast.LENGTH_SHORT).show()
         }
     }
+    
+    fun isStorageGranted(): Boolean = isStoragePermissionGranted
 }
 
 class KyroosShellInterface(private val activity: MainActivity) {
-    
-    @JavascriptInterface
-    fun executeShell(command: String, callbackId: String) {
-        activity.executeShell(command, callbackId)
-    }
-    
-    @JavascriptInterface
-    fun executeShellSync(command: String): String {
-        return activity.executeShellSync(command)
-    }
-    
-    @JavascriptInterface
-    fun isShizukuAvailable(): Boolean {
-        return activity.isShizukuAvailable()
-    }
-    
-    @JavascriptInterface
-    fun getShizukuStatus(): String {
-        return activity.getShizukuStatus()
-    }
-    
-    @JavascriptInterface
-    fun requestShizukuPermission() {
-        activity.requestShizukuPermission()
-    }
+    @JavascriptInterface fun executeShell(cmd: String, id: String) = activity.executeShell(cmd, id)
+    @JavascriptInterface fun executeShellSync(cmd: String): String = activity.executeShellSync(cmd)
+    @JavascriptInterface fun isShizukuAvailable(): Boolean = activity.isShizukuAvailable()
+    @JavascriptInterface fun canAccessSettings(): Boolean = activity.canAccessSettings()
+    @JavascriptInterface fun getShizukuStatus(): String = activity.getShizukuStatus()
+    @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
+    @JavascriptInterface fun isStorageGranted(): Boolean = activity.isStorageGranted()
 }
