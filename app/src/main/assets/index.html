@@ -20,6 +20,25 @@
 
     <main class="main-content">
         <section id="home" class="tab-section active">
+            <!-- SHIZUKU STATUS CARD - FULLY INTEGRATED WITH KYROOS DESIGN -->
+            <div class="card shizuku-card" id="shizukuCard">
+                <div class="shizuku-header">
+                    <div class="shizuku-left">
+                        <div class="shizuku-icon-wrapper">
+                            <span class="material-symbols-rounded shizuku-icon">security</span>
+                        </div>
+                        <div class="shizuku-info">
+                            <div class="shizuku-title">
+                                <span>Shizuku</span>
+                                <span class="shizuku-badge" id="shizukuBadge">● Mengecek</span>
+                            </div>
+                            <div class="shizuku-desc" id="shizukuDesc">Memverifikasi status Shizuku...</div>
+                        </div>
+                    </div>
+                    <div class="shizuku-actions" id="shizukuActions"></div>
+                </div>
+            </div>
+
             <div class="card status-hero" id="statusCard">
                 <div class="status-header">
                     <span class="material-symbols-rounded status-icon" id="statusIcon">hourglass_empty</span>
@@ -31,7 +50,7 @@
             </div>
 
             <div class="card">
-                <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">extension</span></div><div class="info-content"><h3>Module Version</h3><p>8.0</p></div></div>
+                <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">extension</span></div><div class="info-content"><h3>Module Version</h3><p>9.0</p></div></div>
                 <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">developer_board</span></div><div class="info-content"><h3>SoC Platform</h3><p id="chipsetInfo">Scanning...</p></div></div>
                 <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">memory</span></div><div class="info-content"><h3>RAM Capacity</h3><p id="ramInfo">Calculating...</p></div></div>
                 <div class="info-item"><div class="info-icon-box"><span class="material-symbols-rounded">terminal</span></div><div class="info-content"><h3>Kernel</h3><p id="kernelInfo" style="font-size: 14px;">Checking...</p></div></div>
@@ -274,7 +293,7 @@
         </div>
     </div>
 
-        <div id="opapsConfirmModal" class="modal-overlay">
+    <div id="opapsConfirmModal" class="modal-overlay">
         <div class="modal-box">
             <div style="background-color: var(--md-primary-container); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
                 <span class="material-symbols-rounded" style="font-size:32px; color: var(--md-on-primary-container);">shield_lock</span>
@@ -294,7 +313,6 @@
             </div>
         </div>
     </div>
-
 
     <div id="devModal" class="modal-overlay">
         <div class="modal-box profile-box">
