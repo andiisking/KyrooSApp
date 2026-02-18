@@ -1,7 +1,7 @@
 package frb.axeron.adb
 
 import android.util.Log
-import frb.axeron.adb.AdbProtocol.*
+import frb.axeron.adb.AdbProtocol.*  // Ganti dengan import satu per satu
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -34,14 +34,14 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
         plainInputStream = DataInputStream(socket.getInputStream())
         plainOutputStream = DataOutputStream(socket.getOutputStream())
 
-        write(A_CNXN, A_VERSION, A_MAXDATA, "host::")
+        write(AdbProtocol.A_CNXN, AdbProtocol.A_VERSION, AdbProtocol.A_MAXDATA, "host::")
 
         var message = read()
-        if (message.command == A_STLS) {
+        if (message.command == AdbProtocol.A_STLS) {
             if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
                 error("Connect to adb with TLS is not supported before Android 10")
             }
-            write(A_STLS, A_STLS_VERSION, 0)
+            write(AdbProtocol.A_STLS, AdbProtocol.A_STLS_VERSION, 0)
 
             val sslContext = key.sslContext
             tlsSocket = sslContext.socketFactory.createSocket(socket, host, port, true) as SSLSocket
@@ -53,18 +53,18 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
             useTls = true
 
             message = read()
-        } else if (message.command == A_AUTH) {
-            if (message.arg0 != ADB_AUTH_TOKEN) error("not A_AUTH ADB_AUTH_TOKEN")
-            write(A_AUTH, ADB_AUTH_SIGNATURE, 0, key.sign(message.data))
+        } else if (message.command == AdbProtocol.A_AUTH) {
+            if (message.arg0 != AdbProtocol.ADB_AUTH_TOKEN) error("not A_AUTH ADB_AUTH_TOKEN")
+            write(AdbProtocol.A_AUTH, AdbProtocol.ADB_AUTH_SIGNATURE, 0, key.sign(message.data))
 
             message = read()
-            if (message.command != A_CNXN) {
-                write(A_AUTH, ADB_AUTH_RSAPUBLICKEY, 0, key.adbPublicKey)
+            if (message.command != AdbProtocol.A_CNXN) {
+                write(AdbProtocol.A_AUTH, AdbProtocol.ADB_AUTH_RSAPUBLICKEY, 0, key.adbPublicKey)
                 message = read()
             }
         }
 
-        if (message.command != A_CNXN) error("not A_CNXN")
+        if (message.command != AdbProtocol.A_CNXN) error("not A_CNXN")
     }
 
     // ========== METHOD GAYA AXERON (dengan listener) ==========
@@ -74,32 +74,32 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
 
     fun command(cmd: String, onData: (ByteArray) -> Unit) {
         val localId = 1
-        write(A_OPEN, localId, 0, cmd)
+        write(AdbProtocol.A_OPEN, localId, 0, cmd)
 
         var message = read()
         when (message.command) {
-            A_OKAY -> {
+            AdbProtocol.A_OKAY -> {
                 while (true) {
                     message = read()
                     val remoteId = message.arg0
                     when (message.command) {
-                        A_WRTE -> {
+                        AdbProtocol.A_WRTE -> {
                             if (message.data_length > 0) {
                                 onData(message.data!!)
                             }
-                            write(A_OKAY, localId, remoteId)
+                            write(AdbProtocol.A_OKAY, localId, remoteId)
                         }
-                        A_CLSE -> {
-                            write(A_CLSE, localId, remoteId)
+                        AdbProtocol.A_CLSE -> {
+                            write(AdbProtocol.A_CLSE, localId, remoteId)
                             break
                         }
                         else -> error("Unexpected command: ${message.command}")
                     }
                 }
             }
-            A_CLSE -> {
+            AdbProtocol.A_CLSE -> {
                 val remoteId = message.arg0
-                write(A_CLSE, localId, remoteId)
+                write(AdbProtocol.A_CLSE, localId, remoteId)
             }
             else -> error("Unexpected response: ${message.command}")
         }
@@ -108,9 +108,9 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
     // ========== METHOD STREAM (untuk kompatibilitas dengan kode lama) ==========
     fun open(destination: String): AdbStream {
         val localId = generateLocalId()
-        write(A_OPEN, localId, 0, destination)
+        write(AdbProtocol.A_OPEN, localId, 0, destination)
         val message = read()
-        if (message.command != A_OKAY) {
+        if (message.command != AdbProtocol.A_OKAY) {
             throw AdbException("Failed to open stream: ${message.command}")
         }
         val remoteId = message.arg0
@@ -179,16 +179,16 @@ class AdbStream(
         while (true) {
             val message = client.read()
             when (message.command) {
-                A_WRTE -> {
+                AdbProtocol.A_WRTE -> {
                     if (message.arg0 == localId) {
-                        client.write(A_OKAY, localId, remoteId)
+                        client.write(AdbProtocol.A_OKAY, localId, remoteId)
                         if (message.data != null) {
                             chunks.add(message.data)
                             Log.d(TAG, "Chunk size: ${message.data.size}")
                         }
                     }
                 }
-                A_CLSE -> {
+                AdbProtocol.A_CLSE -> {
                     closed = true
                     break
                 }
@@ -211,7 +211,7 @@ class AdbStream(
     override fun close() {
         if (!closed) {
             closed = true
-            runCatching { client.write(A_CLSE, localId, remoteId) }
+            runCatching { client.write(AdbProtocol.A_CLSE, localId, remoteId) }
         }
     }
 }

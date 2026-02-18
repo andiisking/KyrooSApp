@@ -107,7 +107,8 @@ class AdbMessage(
             if (data == null) return 0
             var res = 0
             for (b in data) {
-                res += if (b >= 0) b else b + 256
+                // Perbaikan: gunakan toInt() dan tambah 256 jika negatif
+                res += if (b >= 0) b.toInt() else b.toInt() + 256
             }
             return res
         }
