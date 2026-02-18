@@ -12,7 +12,6 @@ import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
 import org.bouncycastle.cert.X509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
-import rikka.core.ktx.unsafeLazy
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.net.Socket
@@ -112,7 +111,7 @@ class AdbKey(private val adbKeyStore: AdbKeyStore, name: String) {
         Log.d(TAG, privateKey.toString())
     }
 
-    val adbPublicKey: ByteArray by unsafeLazy {
+    val adbPublicKey: ByteArray by lazy {
         publicKey.adbEncoded(name)
     }
 
@@ -307,7 +306,7 @@ class AdbKey(private val adbKeyStore: AdbKeyStore, name: String) {
             }
 
     @delegate:RequiresApi(Build.VERSION_CODES.R)
-    val sslContext: SSLContext by unsafeLazy {
+    val sslContext: SSLContext by lazy {
         val sslContext = SSLContext.getInstance("TLSv1.3")
         sslContext.init(arrayOf(keyManager), arrayOf(trustManager), SecureRandom())
         sslContext

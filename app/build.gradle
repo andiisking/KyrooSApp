@@ -67,13 +67,12 @@ dependencies {
     // 7. Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     
-    // 8. RIKKA CORE - Library yang dibutuhkan oleh kode Axeron
-    implementation 'dev.rikka.rikkax.core:core:1.4.1'
+    // 8. Hapus Rikka karena kita sudah ganti unsafeLazy dengan lazy biasa
+    // implementation 'dev.rikka.rikkax.core:core:1.4.1' // TIDAK PERLU
     
-    // 9. RIKKA SHIZUKU - Untuk akses root/ADB yang lebih baik (opsional, tapi disarankan)
-    implementation 'dev.rikka.shizuku:api:13.1.5'
-    implementation 'dev.rikka.shizuku:provider:13.1.5'
-    
-    // 10. AndroidX Annotation
+    // 9. AndroidX Annotation
     implementation 'androidx.annotation:annotation:1.7.0'
+    
+    // 10. WebKit (untuk WebView)
+    implementation 'androidx.webkit:webkit:1.9.0'
 }

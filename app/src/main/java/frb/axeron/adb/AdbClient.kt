@@ -2,7 +2,6 @@ package frb.axeron.adb
 
 import android.util.Log
 import frb.axeron.adb.AdbProtocol.*
-import rikka.core.util.BuildUtils
 import java.io.Closeable
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -39,8 +38,8 @@ class AdbClient(private val key: AdbKey, private val port: Int, private val host
 
         var message = read()
         if (message.command == A_STLS) {
-            if (!BuildUtils.atLeast29) {
-                error("Connect to adb with TLS is not supported before Android 9")
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+                error("Connect to adb with TLS is not supported before Android 10")
             }
             write(A_STLS, A_STLS_VERSION, 0)
 
