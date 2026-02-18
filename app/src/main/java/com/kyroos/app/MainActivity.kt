@@ -59,6 +59,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupWebView() {
+        WebView(this).clearCache(true)
+        
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -71,7 +73,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
             
-            // PENTING: Jangan block network!
+            // 🔥 PENTING: Izinkan network
             blockNetworkImage = false
             blockNetworkLoads = false
             cacheMode = WebSettings.LOAD_DEFAULT
@@ -90,26 +92,6 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
     
-    override fun onResume() {
-        super.onResume()
-        checkShizukuStatus()
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        try {
-            Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
-        } catch (e: Exception) { }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-    }
-
     private fun checkNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
@@ -167,23 +149,44 @@ class MainActivity : AppCompatActivity() {
         Log.d("Shizuku", "✅ Shizuku ready!")
         runOnUiThread {
             Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
-            webView.evaluateJavascript(
-                "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
-                null
-            )
         }
     }
     
-    // ========== SHELL EXECUTION ==========
-    // Fungsi ini DIPANGGIL oleh JavaScript via interface
-    
+    // 🔥 FUNGSI EKSEKUSI SHELL YANG SEBENARNYA
     fun executeShell(command: String, callbackId: String) {
-        Log.d("Shell", "Executing async: $command, callbackId: $callbackId")
+        Log.d("Shell-EXEC", "🚀 Menjalankan: $command")
         
         Thread {
             try {
-                val result = executeShellCommand(command)
+                // 🔥 GUNAKAN Runtime.getRuntime().exec()
+                val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
                 
+                // Baca output
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                val output = StringBuilder()
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    output.append(line).append("\n")
+                }
+                
+                // Baca error
+                val errorReader = BufferedReader(InputStreamReader(process.errorStream))
+                val error = StringBuilder()
+                while (errorReader.readLine().also { line = it } != null) {
+                    error.append(line).append("\n")
+                }
+                
+                val exitCode = process.waitFor()
+                
+                val result = if (exitCode == 0) {
+                    output.toString().trim()
+                } else {
+                    "Error($exitCode): ${error.toString().trim()}"
+                }
+                
+                Log.d("Shell-EXEC", "✅ Hasil: ${result.take(100)}...")
+                
+                // Kirim hasil ke JavaScript
                 runOnUiThread {
                     val escaped = result
                         .replace("\\", "\\\\")
@@ -194,7 +197,9 @@ class MainActivity : AppCompatActivity() {
                     val jsCode = "window.shellCallback('$callbackId', '$escaped', false)"
                     webView.evaluateJavascript(jsCode, null)
                 }
+                
             } catch (e: Exception) {
+                Log.e("Shell-EXEC", "❌ Error: ${e.message}")
                 runOnUiThread {
                     val jsCode = "window.shellCallback('$callbackId', 'Error: ${e.message}', true)"
                     webView.evaluateJavascript(jsCode, null)
@@ -204,11 +209,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     fun executeShellSync(command: String): String {
-        Log.d("Shell", "Executing sync: $command")
-        return executeShellCommand(command)
-    }
-    
-    private fun executeShellCommand(command: String): String {
+        Log.d("Shell-SYNC", "🚀 Menjalankan: $command")
+        
         return try {
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
             
@@ -227,7 +229,7 @@ class MainActivity : AppCompatActivity() {
             
             val exitCode = process.waitFor()
             
-            return if (exitCode == 0) {
+            if (exitCode == 0) {
                 output.toString().trim()
             } else {
                 "Error($exitCode): ${error.toString().trim()}"
@@ -236,8 +238,6 @@ class MainActivity : AppCompatActivity() {
             "Error: ${e.message}"
         }
     }
-    
-    // ========== FUNGSI YANG DIPANGGIL JS ==========
     
     fun isShizukuAvailable(): Boolean {
         return isShizukuAvailable && isShizukuPermissionGranted
@@ -263,8 +263,6 @@ class MainActivity : AppCompatActivity() {
 }
 
 // ========== JAVASCRIPT INTERFACE ==========
-// Class ini menghubungkan JavaScript ke fungsi-fungsi di atas
-
 class KyroosShellInterface(private val activity: MainActivity) {
     
     @JavascriptInterface
@@ -290,10 +288,5 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface
     fun requestShizukuPermission() {
         activity.requestShizukuPermission()
-    }
-    
-    @JavascriptInterface
-    fun testShell(): String {
-        return activity.executeShellSync("echo 'JS interface working!'")
     }
 }
