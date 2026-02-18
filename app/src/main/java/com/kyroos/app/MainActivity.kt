@@ -16,12 +16,11 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
-import com.topjohnwu.superuser.Shell
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuBinderWrapper
+import rikka.shizuku.ShizukuService
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 class MainActivity : AppCompatActivity() {
     
@@ -37,17 +36,17 @@ class MainActivity : AppCompatActivity() {
             isShizukuPermissionGranted = grantResult == PackageManager.PERMISSION_GRANTED
             runOnUiThread {
                 if (isShizukuPermissionGranted) {
-                    Toast.makeText(this, "Shizuku permission granted!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
                     webView.evaluateJavascript(
                         "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
                         null
                     )
+                    
+                    // TEST SHIZUKU
+                    testShizuku()
+                    
                 } else {
-                    Toast.makeText(this, "Shizuku permission denied", Toast.LENGTH_LONG).show()
-                    webView.evaluateJavascript(
-                        "if(window.onShizukuStatus) window.onShizukuStatus('denied')",
-                        null
-                    )
+                    Toast.makeText(this, "❌ Shizuku Denied", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -78,10 +77,10 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
             
-            // DISABLE INTERNET - fonts are offline
-            blockNetworkImage = true
-            blockNetworkLoads = true
-            cacheMode = WebSettings.LOAD_NO_CACHE
+            // ⚠️ PERBAIKAN: JANGAN BLOCK NETWORK
+            blockNetworkImage = false  // UBAH KE false
+            blockNetworkLoads = false   // UBAH KE false
+            cacheMode = WebSettings.LOAD_DEFAULT
         }
         
         webView.webViewClient = WebViewClient()
@@ -106,9 +105,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         try {
             Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
-        } catch (e: Exception) {
-            // Ignore
-        }
+        } catch (e: Exception) { }
     }
 
     override fun onRequestPermissionsResult(
@@ -117,9 +114,6 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            101 -> { } // Notification permission
-        }
     }
 
     private fun checkNotificationPermission() {
@@ -135,19 +129,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    // ========== SHIZUKU IMPLEMENTATION ==========
-    
     private fun setupShizuku() {
-        Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-        checkShizukuStatus()
+        try {
+            Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+            checkShizukuStatus()
+        } catch (e: Exception) {
+            Log.e("Shizuku", "Setup error", e)
+        }
     }
     
     private fun checkShizukuStatus() {
-        if (Shizuku.pingBinder()) {
-            if (Shizuku.isPreV11() || Shizuku.getVersion() < 11) {
-                isShizukuAvailable = false
-                showShizukuError("Shizuku version too old. Please update Shizuku.")
-            } else {
+        try {
+            if (Shizuku.pingBinder()) {
+                Log.d("Shizuku", "✅ Shizuku binder available")
                 isShizukuAvailable = true
                 
                 val permission = Shizuku.checkSelfPermission()
@@ -155,120 +149,137 @@ class MainActivity : AppCompatActivity() {
                     isShizukuPermissionGranted = true
                     onShizukuReady()
                 } else {
+                    Log.d("Shizuku", "Requesting permission...")
                     Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
                 }
+            } else {
+                Log.e("Shizuku", "❌ Shizuku binder not available")
+                isShizukuAvailable = false
+                showShizukuError("Shizuku is not running")
             }
-        } else {
+        } catch (e: Exception) {
+            Log.e("Shizuku", "Error checking status", e)
             isShizukuAvailable = false
-            showShizukuError("Shizuku is not running. Please install and activate Shizuku first.")
         }
     }
     
     private fun showShizukuError(message: String) {
         runOnUiThread {
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-            Log.e("Shizuku", message)
-            
-            if (::webView.isInitialized) {
-                val escapedMessage = message.replace("'", "\\'")
-                webView.evaluateJavascript(
-                    "if(window.onShizukuError) window.onShizukuError('$escapedMessage')",
-                    null
-                )
-            }
         }
     }
     
     private fun onShizukuReady() {
-        Log.d("Shizuku", "Shizuku ready!")
+        Log.d("Shizuku", "✅ Shizuku ready!")
         runOnUiThread {
-            Toast.makeText(this, "Shizuku is ready to use!", Toast.LENGTH_SHORT).show()
-            webView.evaluateJavascript(
-                "if(window.onShizukuStatus) window.onShizukuStatus('ready')",
-                null
-            )
+            Toast.makeText(this, "✅ Shizuku Ready!", Toast.LENGTH_SHORT).show()
         }
     }
     
-    suspend fun executeShellCommand(command: String): Shell.Result {
-        return withContext(Dispatchers.IO) {
-            Shell.cmd(command).exec()
+    // ========== SHIZUKU SHELL EXECUTION ==========
+    
+    fun executeShellCommand(command: String): String {
+        Log.d("Shell", "Executing via Shizuku: $command")
+        
+        return try {
+            if (!isShizukuAvailable || !isShizukuPermissionGranted) {
+                return "Error: Shizuku not ready"
+            }
+            
+            executeWithShizuku(command)
+            
+        } catch (e: Exception) {
+            "Error: ${e.message}"
         }
+    }
+    
+    private fun executeWithShizuku(command: String): String {
+        var process: Process? = null
+        try {
+            // 🔥 GUNAKAN Shizuku.newProcess() UNTUK EKSEKUSI
+            process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
+            
+            // Baca output
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val output = StringBuilder()
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                output.append(line).append("\n")
+            }
+            
+            // Baca error
+            val errorReader = BufferedReader(InputStreamReader(process.errorStream))
+            val error = StringBuilder()
+            while (errorReader.readLine().also { line = it } != null) {
+                error.append(line).append("\n")
+            }
+            
+            val exitCode = process.waitFor()
+            
+            return if (exitCode == 0) {
+                output.toString().trim()
+            } else {
+                "Error($exitCode): ${error.toString().trim()}"
+            }
+        } catch (e: Exception) {
+            return "Shizuku error: ${e.message}"
+        } finally {
+            process?.destroy()
+        }
+    }
+    
+    // TEST SHIZUKU
+    private fun testShizuku() {
+        Thread {
+            try {
+                val result = executeWithShizuku("echo 'Shizuku is working!' && id")
+                Log.d("ShizukuTest", "Result: $result")
+                
+                runOnUiThread {
+                    Toast.makeText(this, "✅ Shizuku Test: $result", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Log.e("ShizukuTest", "Failed", e)
+            }
+        }.start()
     }
 }
 
-// ========== JAVASCRIPT INTERFACE FOR SHELL ==========
+// ========== JAVASCRIPT INTERFACE ==========
 
 class KyroosShellInterface(private val activity: MainActivity) {
     
     @JavascriptInterface
     fun executeShell(command: String, callbackId: String) {
-        Log.d("Shell", "Async command: $command, callbackId: $callbackId")
+        Log.d("JSInterface", "Async: $command")
         
-        if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
-            activity.runOnUiThread {
-                activity.webView.evaluateJavascript(
-                    "window.shellCallback('$callbackId', 'Error: Shizuku not available', true)",
-                    null
-                )
-            }
-            return
-        }
-
-        activity.lifecycleScope.launch(Dispatchers.IO) {
+        Thread {
             try {
                 val result = activity.executeShellCommand(command)
                 
-                val output = if (result.isSuccess) {
-                    result.out.joinToString("\n")
-                } else {
-                    "Error: ${result.err.joinToString("\n")}"
-                }
-                
-                withContext(Dispatchers.Main) {
-                    val escapedOutput = output
+                activity.runOnUiThread {
+                    val escaped = result
                         .replace("\\", "\\\\")
                         .replace("'", "\\'")
                         .replace("\n", "\\n")
                         .replace("\r", "\\r")
                     
-                    activity.webView.evaluateJavascript(
-                        "window.shellCallback('$callbackId', '$escapedOutput', ${!result.isSuccess})",
-                        null
-                    )
+                    val jsCode = "window.shellCallback('$callbackId', '$escaped', false)"
+                    activity.webView.evaluateJavascript(jsCode, null)
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    activity.webView.evaluateJavascript(
-                        "window.shellCallback('$callbackId', 'Error: ${e.message}', true)",
-                        null
-                    )
+                activity.runOnUiThread {
+                    val jsCode = "window.shellCallback('$callbackId', 'Error: ${e.message}', true)"
+                    activity.webView.evaluateJavascript(jsCode, null)
                 }
             }
-        }
+        }.start()
     }
     
     @JavascriptInterface
     fun executeShellSync(command: String): String {
-        Log.d("Shell", "Sync command: $command")
-        
-        if (!activity.isShizukuAvailable || !activity.isShizukuPermissionGranted) {
-            return "Error: Shizuku not available"
-        }
-
-        return try {
-            val result = kotlinx.coroutines.runBlocking {
-                activity.executeShellCommand(command)
-            }
-            
-            if (result.isSuccess) {
-                result.out.joinToString("\n")
-            } else {
-                "Error: ${result.err.joinToString("\n")}"
-            }
-        } catch (e: Exception) {
-            "Error: ${e.message}"
-        }
+        Log.d("JSInterface", "Sync: $command")
+        return activity.executeShellCommand(command)
     }
     
     @JavascriptInterface
@@ -289,7 +300,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
     fun requestShizukuPermission() {
         activity.runOnUiThread {
             if (!activity.isShizukuAvailable) {
-                Toast.makeText(activity, "Shizuku is not running", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, "Shizuku not running", Toast.LENGTH_SHORT).show()
             } else if (!activity.isShizukuPermissionGranted) {
                 Shizuku.requestPermission(activity.SHIZUKU_PERMISSION_CODE)
             }
@@ -297,34 +308,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
     }
     
     @JavascriptInterface
-    fun getSystemProperty(key: String): String {
-        return try {
-            val result = kotlinx.coroutines.runBlocking {
-                activity.executeShellCommand("getprop $key")
-            }
-            if (result.isSuccess) result.out.firstOrNull() ?: "" else ""
-        } catch (e: Exception) {
-            ""
-        }
-    }
-    
-    @JavascriptInterface
-    fun getDeviceInfo(): String {
-        return try {
-            val result = kotlinx.coroutines.runBlocking {
-                activity.executeShellCommand("uname -a")
-            }
-            if (result.isSuccess) result.out.joinToString("\n") else "unknown"
-        } catch (e: Exception) {
-            "unknown"
-        }
-    }
-    
-    @JavascriptInterface
-    fun clearCache() {
-        activity.runOnUiThread {
-            activity.webView.clearCache(true)
-            Toast.makeText(activity, "Cache cleared", Toast.LENGTH_SHORT).show()
-        }
+    fun testShell(): String {
+        return activity.executeShellCommand("echo 'Test from JS' && id")
     }
 }
