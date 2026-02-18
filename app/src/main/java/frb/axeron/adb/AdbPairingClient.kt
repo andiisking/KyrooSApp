@@ -275,7 +275,8 @@ class AdbPairingClient(
             
             // XOR dengan keyMaterial yang sudah ada
             for (i in 0 until minOf(keyMaterial.size, hkdfMaterial.size)) {
-                keyMaterial[i] = (keyMaterial[i] xor hkdfMaterial[i]).toByte()
+                // ✅ PERBAIKAN: XOR untuk Byte harus dengan konversi ke Int
+                keyMaterial[i] = (keyMaterial[i].toInt() xor hkdfMaterial[i].toInt()).toByte()
             }
         } catch (e: Exception) {
             Log.w(TAG, "HKDF fallback failed, using basic seed only", e)
