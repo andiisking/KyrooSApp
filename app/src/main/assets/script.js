@@ -29,7 +29,13 @@ async function execShell(cmd) {
         if (typeof KyroosApp !== 'undefined') {
             console.log("ADB exec: " + cmd);
             
-            // Handle perintah yang diketahui bekerja tanpa fallback
+            // PERINGATAN: Hindari perintah dengan output besar!
+            if (cmd.includes('dumpsys meminfo') || cmd.includes('dumpsys')) {
+                console.warn("SKIP: dumpsys meminfo - output terlalu besar!");
+                return ""; // Langsung return kosong
+            }
+            
+            // Handle perintah yang diketahui bekerja
             if (cmd.includes('wm size') || cmd.includes('sigma') || cmd.includes('echo')) {
                 const result = KyroosApp.executeShell(cmd);
                 console.log("ADB result:", result);
@@ -40,22 +46,24 @@ async function execShell(cmd) {
             let result = "";
             let lastError = "";
             
-            // Variasi perintah yang akan dicoba
+            // Variasi perintah yang akan dicoba (maksimal 3 kali, bukan 6)
             const variants = [
-                cmd,  // original
-                "sh -c '" + cmd + "'",  // via sh
-                "/system/bin/sh -c '" + cmd + "'",  // via system sh
-                "busybox " + cmd,  // via busybox jika ada
-                "/system/bin/" + cmd.replace("/system/bin/", ""),  // paksa pakai system bin
-                cmd.replace("/system/bin/", "")  // tanpa prefix
+                cmd,
+                "sh -c '" + cmd + "'", 
+                "/system/bin/sh -c '" + cmd + "'"
             ];
             
             for (let v of variants) {
                 try {
                     result = KyroosApp.executeShell(v);
-                    console.log(`Variant "${v}" result:`, result);
+                    console.log(`Variant "${v}" result length:`, result?.length || 0);
                     
-                    // Jika hasil tidak kosong, tidak error, dan bukan whitespace doang
+                    // Batasi hasil maksimal 10KB untuk keamanan
+                    if (result && result.length > 10240) {
+                        console.warn(`Result too large (${result.length} bytes), truncating`);
+                        result = result.substring(0, 10240) + "\n... (truncated)";
+                    }
+                    
                     if (result && !result.startsWith("Error:") && result.trim().length > 0) {
                         return result;
                     }
@@ -68,54 +76,6 @@ async function execShell(cmd) {
                 }
             }
             
-            // Fallback khusus untuk getprop - baca langsung dari file build.prop
-            if (cmd.includes("getprop")) {
-                const propName = cmd.match(/getprop\s+(\S+)/)?.[1];
-                if (propName) {
-                    const buildProp = KyroosApp.executeShell("cat /system/build.prop");
-                    const lines = buildProp.split('\n');
-                    for (let line of lines) {
-                        if (line.startsWith(propName + "=")) {
-                            return line.split('=')[1] || "";
-                        }
-                    }
-                }
-            }
-            
-            // Fallback untuk meminfo
-            if (cmd.includes("meminfo") || cmd.includes("MemTotal")) {
-                const meminfo = KyroosApp.executeShell("dumpsys meminfo");
-                const match = meminfo.match(/Total RAM:?\s*(\d+)/i);
-                if (match) {
-                    return "MemTotal: " + match[1] + " kB";
-                }
-            }
-            
-            // Fallback untuk uname
-            if (cmd.includes("uname") || cmd.includes("kernel")) {
-                const version = KyroosApp.executeShell("cat /proc/version");
-                const vMatch = version.match(/version (.*?) \(/);
-                if (vMatch) return vMatch[1];
-            }
-            
-            // Fallback untuk daftar paket
-            if (cmd.includes("pm list") || cmd.includes("package list")) {
-                // Coba metode alternatif
-                const packages = KyroosApp.executeShell("ls /data/app");
-                if (packages && packages.length > 0) {
-                    const pkgList = packages.split('\n')
-                        .map(line => {
-                            const match = line.match(/([^\/]+)-/);
-                            return match ? match[1] : null;
-                        })
-                        .filter(p => p);
-                    if (pkgList.length > 0) {
-                        return pkgList.map(p => "package:" + p).join('\n');
-                    }
-                }
-            }
-            
-            // Jika semua gagal, kembalikan hasil terakhir atau kosong
             return lastError || "";
         }
 
@@ -197,23 +157,20 @@ async function updateHomeData() {
         chip = await execShell("getprop ro.board.platform");
     }
     if (!chip || chip.trim() === "") {
-        chip = await execShell("cat /system/build.prop | grep ro.board.platform");
-        if (chip) {
-            const match = chip.match(/ro\.board\.platform=(.*)/);
-            chip = match ? match[1] : "";
-        }
+        // Baca langsung dari file build.prop
+        const buildProp = await execShell("cat /system/build.prop");
+        const match = buildProp.match(/ro\.board\.platform=(.*)/);
+        chip = match ? match[1] : "";
     }
     if (!chip || chip.trim() === "") {
         chip = await execShell("getprop ro.product.board");
     }
     document.getElementById('chipsetInfo').innerText = chip.trim() || "Unknown";
 
-    // RAM - coba berbagai metode
+    // RAM - PAKAI METODE AMAN (bukan dumpsys!)
     let mem = await execShell("cat /proc/meminfo | grep MemTotal");
     if (!mem || mem.trim() === "") {
-        mem = await execShell("dumpsys meminfo | grep 'Total RAM'");
-    }
-    if (!mem || mem.trim() === "") {
+        // Alternatif: baca file /proc/meminfo langsung tanpa grep
         mem = await execShell("cat /proc/meminfo");
     }
     
@@ -222,6 +179,7 @@ async function updateHomeData() {
         const kb = parseInt(memMatch[1]);
         document.getElementById('ramInfo').innerText = (kb / 1024 / 1024).toFixed(1) + " GB";
     } else {
+        // Fallback terakhir - tampilkan pesan
         document.getElementById('ramInfo').innerText = "Unknown";
     }
 
@@ -234,14 +192,9 @@ async function updateHomeData() {
         kernel = await execShell("cat /proc/version");
         const vMatch = kernel.match(/version (.*?) \(/);
         if (vMatch) kernel = vMatch[1];
-        else {
-            const v2Match = kernel.match(/Linux version (\S+)/);
-            if (v2Match) kernel = v2Match[1];
-        }
     }
     document.getElementById('kernelInfo').innerText = kernel.trim() || "Unknown";
 
-    // Status Sigma
     checkStatus();
 }
 
@@ -291,9 +244,7 @@ async function startAppScan() {
     const commands = [
         "cmd package list packages -u",
         "/system/bin/pm list packages -u",
-        "pm list packages -u",
-        "sh -c 'pm list packages -u'",
-        "busybox pm list packages -u"
+        "pm list packages -u"
     ];
     
     for (let cmd of commands) {
@@ -301,11 +252,11 @@ async function startAppScan() {
         if (raw && raw.includes("package:")) break;
     }
     
-    // Jika masih kosong, coba baca dari /data/app
+    // Jika masih kosong, coba baca dari /data/app (tapi batasi)
     if (!raw || !raw.includes("package:")) {
         const apps = await execShell("ls /data/app");
         if (apps && apps.length > 0) {
-            const lines = apps.split('\n');
+            const lines = apps.split('\n').slice(0, 200); // Batasi 200 baris
             for (let line of lines) {
                 const match = line.match(/([^\/]+)-/);
                 if (match) {
@@ -324,7 +275,7 @@ async function startAppScan() {
         }
     }
 
-    allPackages = rawList;
+    allPackages = rawList.slice(0, 500); // Batasi maksimal 500 paket
     allPackages.sort();
     await loadLabels(allPackages);
     renderAppList();
@@ -335,7 +286,7 @@ async function loadLabels(pkgs) {
     // Jika ada KSU, gunakan untuk mendapatkan label
     if (window.ksu && window.ksu.getPackagesInfo) {
         try {
-            const chunk = pkgs.slice(0, 500);
+            const chunk = pkgs.slice(0, 200); // Batasi 200 untuk KSU
             const infoJson = JSON.stringify(chunk);
             const infos = safeJSONParse(await window.ksu.getPackagesInfo(infoJson));
             infos.forEach(item => {
@@ -375,7 +326,7 @@ function renderAppList(filter = '') {
         return;
     }
 
-    const renderLimit = filter === '' ? 100 : filtered.length;
+    const renderLimit = filter === '' ? 50 : filtered.length; // Batasi tampilan awal 50
     const fragment = document.createDocumentFragment();
 
     filtered.slice(0, renderLimit).forEach(pkg => {
@@ -640,8 +591,7 @@ async function startOpapsScan() {
         const commands = [
             "cmd package list packages -3 -u",
             "/system/bin/pm list packages -3 -u",
-            "pm list packages -3 -u",
-            "sh -c 'pm list packages -3 -u'"
+            "pm list packages -3 -u"
         ];
         
         for (let cmd of commands) {
@@ -651,7 +601,7 @@ async function startOpapsScan() {
         
         // Jika masih kosong, filter dari semua paket
         if ((!raw || !raw.includes("package:")) && allPackages.length > 0) {
-            // Anggap semua paket sebagai user apps (fallback kasar)
+            // Ambil dari allPackages yang sudah ada
             rawList = allPackages;
         } else {
             const regex = /package:([^\s]+)/g;
@@ -661,7 +611,10 @@ async function startOpapsScan() {
             }
         }
 
-        opapsPackages = cleanList(rawList).filter(p => !p.startsWith("com.android.overlay") && !p.startsWith("com.google.android.overlay"));
+        opapsPackages = cleanList(rawList)
+            .filter(p => !p.startsWith("com.android.overlay") && !p.startsWith("com.google.android.overlay"))
+            .slice(0, 200); // Batasi 200
+
         opapsPackages.sort();
 
         await loadLabels(opapsPackages);
@@ -696,7 +649,7 @@ function renderOpapsList(filter = '') {
         return;
     }
 
-    const renderLimit = filter === '' ? 100 : filtered.length;
+    const renderLimit = filter === '' ? 50 : filtered.length; // Batasi 50
     const fragment = document.createDocumentFragment();
 
     filtered.slice(0, renderLimit).forEach(pkg => {
