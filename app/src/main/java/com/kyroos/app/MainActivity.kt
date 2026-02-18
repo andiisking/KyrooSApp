@@ -28,15 +28,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.net.SocketTimeoutException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : AppCompatActivity() {
     internal lateinit var webView: WebView
-
     private var isReceiverRegistered = false
-    private val activeClients = ConcurrentHashMap<String, AdbClient>()
+    
+    // INTERNAL agar bisa diakses dari KyroosAdbInterface
+    internal val activeClients = ConcurrentHashMap<String, AdbClient>()
 
     private val pairingReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -81,20 +80,13 @@ class MainActivity : AppCompatActivity() {
             domStorageEnabled = true
             allowFileAccess = true
             javaScriptCanOpenWindowsAutomatically = true
-            setSupportMultipleWindows(false)
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             WebView.setWebContentsDebuggingEnabled(true)
         }
         
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                Log.d("MainActivity", "Page loaded: $url")
-            }
-        }
-        
+        webView.webViewClient = WebViewClient()
         webView.addJavascriptInterface(KyroosAdbInterface(this), "KyroosApp")
         webView.loadUrl("file:///android_asset/index.html")
 
@@ -125,7 +117,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         
-        // Cleanup ADB clients
+        // Cleanup semua ADB clients
         activeClients.forEach { (_, client) ->
             try { client.close() } catch (_: Exception) {}
         }
@@ -228,15 +220,9 @@ class MainActivity : AppCompatActivity() {
                 false
             }
         }
-
-    fun cleanupClient(callbackId: String) {
-        activeClients.remove(callbackId)?.close()
-    }
 }
 
 class KyroosAdbInterface(private val activity: MainActivity) {
-    
-    private val isExecuting = AtomicBoolean(false)
 
     @JavascriptInterface
     fun executeShell(command: String): String {
@@ -345,15 +331,6 @@ class KyroosAdbInterface(private val activity: MainActivity) {
             }
         } catch (e: Exception) {
             Log.e("KyroosAdb", "Send callback failed: ${e.message}")
-            // Fallback
-            try {
-                activity.runOnUiThread {
-                    activity.webView.evaluateJavascript(
-                        "console.error('Callback failed: $callbackId')", 
-                        null
-                    )
-                }
-            } catch (_: Exception) {}
         }
     }
 

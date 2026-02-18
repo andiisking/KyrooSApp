@@ -1,6 +1,6 @@
 const CONFIG_PATH = "/storage/emulated/0/kikiros";
 
-// Fallback jika tidak ada KSU
+// Fallback KSU
 window.ksu = window.ksu || { exec: async () => ({ stdout: "" }) };
 
 let allPackages = [];
@@ -10,6 +10,7 @@ let currentAngleList = [];
 let currentGameList = [];
 let currentDevList = [];
 let isScanning = false;
+let isAdbReady = false;
 
 function safeJSONParse(str) { 
     try { return JSON.parse(str); } catch { return []; } 
@@ -27,35 +28,33 @@ function cleanList(arr) {
     return [...new Set(arr)].filter(p => p && p.trim().length > 0);
 }
 
-// ================== EKSEKUSI PERINTAH (QUEUE SYSTEM - FINAL) ==================
+// ================== ADB QUEUE SYSTEM (ROBUST) ==================
 
 window.adbCallbacks = {};
 const adbQueue = [];           
 let isAdbExecuting = false;    
-let queueProcessing = false;  // Lock tambahan untuk processQueue itself
-let queueTimer = null;
-let queueWatchdog = null;
+let queueLock = false;         
+let watchdogTimer = null;
 
-// Watchdog: Force reset kalau macet lebih dari 15 detik
 function startWatchdog() {
-    if (queueWatchdog) clearTimeout(queueWatchdog);
-    queueWatchdog = setTimeout(() => {
-        console.error("WATCHDOG: Queue stuck! Force resetting...");
+    if (watchdogTimer) clearTimeout(watchdogTimer);
+    watchdogTimer = setTimeout(() => {
+        console.error("WATCHDOG: Force reset queue");
         isAdbExecuting = false;
-        queueProcessing = false;
+        queueLock = false;
         processQueue();
     }, 15000);
 }
 
 function stopWatchdog() {
-    if (queueWatchdog) {
-        clearTimeout(queueWatchdog);
-        queueWatchdog = null;
+    if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
     }
 }
 
 window.adbCallback = function(callbackId, base64Result, isError) {
-    console.log("ADB Callback:", callbackId, "error:", isError);
+    console.log("ADB Callback:", callbackId.substring(0, 20), "error:", isError);
     stopWatchdog();
     
     const callback = window.adbCallbacks[callbackId];
@@ -75,7 +74,7 @@ window.adbCallback = function(callbackId, base64Result, isError) {
             if (isError) callback.reject(result);
             else callback.resolve(result);
         } catch (e) {
-            console.error("Callback decode error:", e);
+            console.warn("Decode fallback:", e);
             callback.resolve(base64Result || "");
         }
         delete window.adbCallbacks[callbackId];
@@ -83,19 +82,17 @@ window.adbCallback = function(callbackId, base64Result, isError) {
         console.warn("Callback not found:", callbackId);
     }
 
-    // Reset dan proses berikutnya
+    // Release locks
     isAdbExecuting = false;
+    queueLock = false;
     
-    // Delay minimal untuk mencegah stack overflow
-    setTimeout(() => {
-        queueProcessing = false;
-        processQueue();
-    }, 10);
+    // Process next
+    setTimeout(processQueue, 50);
 };
 
 function processQueue() {
-    // Double-lock pattern: cek isAdbExecuting DAN queueProcessing
-    if (isAdbExecuting || queueProcessing) {
+    // Double-lock prevention
+    if (queueLock || isAdbExecuting) {
         return;
     }
     
@@ -103,25 +100,25 @@ function processQueue() {
         return;
     }
     
-    // Lock segera untuk mencegah race condition
-    queueProcessing = true;
+    // Acquire locks
+    queueLock = true;
     isAdbExecuting = true;
     
     const task = adbQueue.shift();
     const callbackId = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
-    console.log("Queue exec [" + adbQueue.length + " left]:", task.cmd.substring(0, 50));
+    console.log("Queue exec [" + adbQueue.length + " left]:", task.cmd.substring(0, 40));
     
     window.adbCallbacks[callbackId] = { 
-        resolve: task.resolve, 
-        reject: task.reject 
+        resolve: (r) => { task.resolve(r); }, 
+        reject: (e) => { task.reject(e); } 
     };
     
-    // Cek KyroosApp
+    // Check KyroosApp
     if (typeof KyroosApp === 'undefined' || !KyroosApp.executeShell) {
         console.error("KyroosApp missing!");
         isAdbExecuting = false;
-        queueProcessing = false;
+        queueLock = false;
         task.reject("Error: KyroosApp not available");
         delete window.adbCallbacks[callbackId];
         setTimeout(processQueue, 100);
@@ -136,7 +133,7 @@ function processQueue() {
         console.error("ExecuteShell exception:", e);
         stopWatchdog();
         isAdbExecuting = false;
-        queueProcessing = false;
+        queueLock = false;
         task.reject("Error: " + e.message);
         delete window.adbCallbacks[callbackId];
         setTimeout(processQueue, 100);
@@ -144,12 +141,22 @@ function processQueue() {
 }
 
 async function execShell(cmd) {
-    // Cek dulu apakah KyroosApp tersedia
+    if (!cmd || typeof cmd !== 'string') {
+        return "Error: Invalid command";
+    }
+
+    // Tunggu ADB ready
+    if (!isAdbReady && typeof KyroosApp !== 'undefined') {
+        // Cek manual
+        if (KyroosApp.isPaired && KyroosApp.isPaired()) {
+            isAdbReady = true;
+        }
+    }
+
     if (typeof KyroosApp !== 'undefined' && KyroosApp.executeShell) {
         return new Promise((resolve, reject) => {
             adbQueue.push({ cmd, resolve, reject });
-            // Trigger queue
-            setTimeout(processQueue, 0);
+            setTimeout(processQueue, 10);
         });
     }
 
@@ -163,18 +170,21 @@ async function execShell(cmd) {
         }
     }
 
-    console.warn("No execution method!");
-    return "Error: No ADB or KSU available";
+    return "Error: No ADB/KSU available";
 }
+
+// Callback dari Kotlin saat ADB ready
+window.onAdbReady = function(port) {
+    console.log("ADB Ready on port:", port);
+    isAdbReady = true;
+};
 
 // ================== NAVIGASI ==================
 function switchTab(tabId) {
     document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    const target = document.getElementById(tabId);
-    const nav = document.getElementById('nav-' + tabId);
-    if (target) target.classList.add('active');
-    if (nav) nav.classList.add('active');
+    document.getElementById(tabId)?.classList.add('active');
+    document.getElementById('nav-' + tabId)?.classList.add('active');
     if (tabId === 'home') updateHomeData();
 }
 
@@ -183,14 +193,12 @@ function toggleAppConfig(el) {
     localStorage.setItem('advAppConfig', on);
     const nav = document.getElementById('mainNav');
     const btn = document.getElementById('nav-apps');
-    if (btn) {
-        if (on) { 
-            btn.classList.remove('hidden-tab'); 
-            if (nav) nav.classList.add('wide'); 
-        } else { 
-            btn.classList.add('hidden-tab'); 
-            if (nav) nav.classList.remove('wide'); 
-        }
+    if (on) { 
+        btn?.classList.remove('hidden-tab'); 
+        nav?.classList.add('wide'); 
+    } else { 
+        btn?.classList.add('hidden-tab'); 
+        nav?.classList.remove('wide'); 
     }
     if (!on && document.getElementById('apps')?.classList.contains('active')) {
         switchTab('home');
@@ -233,6 +241,7 @@ async function openTgLink(url) {
 function openAppDetail(pkg) {
     currentDetailPkg = pkg;
     const cache = infoCache[pkg] || {};
+    
     const labelEl = document.getElementById('detailAppLabel');
     const pkgEl = document.getElementById('detailAppPkg');
     
@@ -242,19 +251,18 @@ function openAppDetail(pkg) {
     const angleSw = document.getElementById('angleSwitch');
     const gameSw = document.getElementById('gameSwitch');
     const devSw = document.getElementById('devSwitch');
-    const whitelistSw = document.getElementById('whitelistSwitch');
     
     if (angleSw) angleSw.checked = currentAngleList.includes(pkg);
     if (gameSw) gameSw.checked = currentGameList.includes(pkg);
     if (devSw) devSw.checked = currentDevList.includes(pkg);
 
-    execShell(`sh -c "cmd deviceidle whitelist | grep ${pkg}"`)
+    execShell(`cmd deviceidle whitelist | grep ${pkg} || echo "NOT_FOUND"`)
         .then(res => {
-            if (whitelistSw) whitelistSw.checked = res.includes(pkg);
+            const whitelistSw = document.getElementById('whitelistSwitch');
+            if (whitelistSw) whitelistSw.checked = res.includes(pkg) && !res.includes("NOT_FOUND");
         })
         .catch(err => {
             console.error("Whitelist check failed:", err);
-            if (whitelistSw) whitelistSw.checked = false;
         });
 
     document.getElementById('appDetailPage')?.classList.add('open');
@@ -270,25 +278,15 @@ function closeAppDetail() {
 async function updateHomeData() {
     console.log("Updating home...");
     
-    const chipsetEl = document.getElementById('chipsetInfo');
-    const ramEl = document.getElementById('ramInfo');
-    const kernelEl = document.getElementById('kernelInfo');
-    
     try {
-        // Chipset dengan multiple fallback
+        // Chipset
         let chip = "";
-        const props = [
-            "ro.board.platform",
-            "ro.product.board", 
-            "ro.chipname",
-            "ro.hardware",
-            "ro.system.chipname"
-        ];
+        const props = ["ro.board.platform", "ro.product.board", "ro.chipname", "ro.hardware"];
         
         for (const prop of props) {
             if (chip) break;
             try {
-                const result = await execShell(`/system/bin/getprop ${prop}`);
+                const result = await execShell(`getprop ${prop}`);
                 const trimmed = result.trim();
                 if (trimmed && !trimmed.startsWith("Error") && trimmed !== "") {
                     chip = trimmed;
@@ -296,28 +294,28 @@ async function updateHomeData() {
             } catch (e) {}
         }
         
+        const chipsetEl = document.getElementById('chipsetInfo');
         if (chipsetEl) chipsetEl.innerText = chip || "Unknown";
-        console.log("Chipset:", chip || "Unknown");
 
         // RAM
         try {
             const memRaw = await execShell("cat /proc/meminfo | grep MemTotal");
             const memMatch = memRaw.match(/MemTotal:\s+(\d+)/);
+            const ramEl = document.getElementById('ramInfo');
             if (memMatch && ramEl) {
-                const gb = (parseInt(memMatch[1]) / 1024 / 1024).toFixed(1);
-                ramEl.innerText = gb + " GB";
+                ramEl.innerText = (parseInt(memMatch[1]) / 1024 / 1024).toFixed(1) + " GB";
             } else if (ramEl) {
                 ramEl.innerText = "Unknown";
             }
         } catch (e) {
+            const ramEl = document.getElementById('ramInfo');
             if (ramEl) ramEl.innerText = "Error";
         }
 
         // Kernel
         let kernel = "";
         try {
-            const uname = await execShell("/system/bin/uname -r");
-            kernel = uname.trim();
+            kernel = (await execShell("uname -r")).trim();
         } catch (e) {}
         
         if (!kernel) {
@@ -328,8 +326,8 @@ async function updateHomeData() {
             } catch (e) {}
         }
         
+        const kernelEl = document.getElementById('kernelInfo');
         if (kernelEl) kernelEl.innerText = kernel || "Unknown";
-        console.log("Kernel:", kernel || "Unknown");
 
         await checkStatus();
     } catch (e) {
@@ -339,7 +337,7 @@ async function updateHomeData() {
 
 async function checkStatus() {
     try {
-        const pid = await execShell("pgrep -f sigma");
+        const pid = await execShell("pgrep -f sigma 2>/dev/null || echo ''");
         const isRun = pid && pid.trim().length > 0 && !pid.includes("Error");
         
         const sigmaSw = document.getElementById('sigmaSwitch');
@@ -371,15 +369,12 @@ async function toggleSigma(el) {
         if (el.checked) {
             await execShell("nohup sh /storage/emulated/0/sigma.sh > /dev/null 2>&1 &");
         } else {
-            await execShell("pkill -f sigma || true");
+            await execShell("pkill -f sigma 2>/dev/null || true");
         }
-        setTimeout(checkStatus, 1000);
+        setTimeout(checkStatus, 800);
     } catch (e) {
         console.error("toggleSigma error:", e);
-        // Revert switch kalau gagal
-        setTimeout(() => {
-            el.checked = !el.checked;
-        }, 100);
+        setTimeout(() => { el.checked = !el.checked; }, 100);
     }
 }
 
@@ -388,25 +383,21 @@ async function startAppScan() {
     if (isScanning) return;
     isScanning = true;
 
-    const initState = document.getElementById('appInitState');
-    const search = document.getElementById('appSearch');
-    const container = document.getElementById('app-list-target');
+    document.getElementById('appInitState')?.style.setProperty('display', 'none');
+    document.getElementById('appSearch')?.classList.add('show');
     
-    if (initState) initState.style.display = 'none';
-    if (search) search.classList.add('show');
+    const container = document.getElementById('app-list-target');
     if (container) container.innerHTML = '<div style="text-align:center; padding:20px;">Loading...</div>';
 
     try {
         let raw = "";
         
-        // Coba cmd package dulu
         try {
-            raw = await execShell("cmd package list packages -u");
+            raw = await execShell("cmd package list packages -u 2>/dev/null");
         } catch (e) {}
         
-        // Fallback ke pm
         if (!raw || raw.trim() === "") {
-            raw = await execShell("/system/bin/pm list packages -u");
+            raw = await execShell("pm list packages -u");
         }
         
         const regex = /package:([^\s]+)/g;
@@ -426,7 +417,7 @@ async function startAppScan() {
     } catch (e) {
         console.error("startAppScan error:", e);
         if (container) {
-            container.innerHTML = '<div style="text-align:center; padding:20px; color: red;">Failed to load</div>';
+            container.innerHTML = '<div style="text-align:center; padding:20px; color: red;">Failed</div>';
         }
     } finally {
         isScanning = false;
@@ -437,8 +428,7 @@ async function loadLabels(pkgs) {
     if (window.ksu && window.ksu.getPackagesInfo) {
         try {
             const chunk = pkgs.slice(0, 500);
-            const infoJson = JSON.stringify(chunk);
-            const result = await window.ksu.getPackagesInfo(infoJson);
+            const result = await window.ksu.getPackagesInfo(JSON.stringify(chunk));
             const infos = safeJSONParse(result);
             infos.forEach(item => {
                 if (!infoCache[item.packageName]) infoCache[item.packageName] = {};
@@ -463,7 +453,6 @@ function renderAppList(filter = '') {
     if (!container) return;
     
     const filterLower = filter.toLowerCase();
-
     const filtered = allPackages.filter(pkg => {
         const label = (infoCache[pkg]?.label || "").toLowerCase();
         return pkg.toLowerCase().includes(filterLower) || label.includes(filterLower);
@@ -484,7 +473,6 @@ function renderAppList(filter = '') {
 
     filtered.slice(0, limit).forEach(pkg => {
         const label = infoCache[pkg]?.label || pkg;
-
         const div = document.createElement('div');
         div.className = 'app-card-item';
         div.onclick = () => openAppDetail(pkg);
@@ -596,11 +584,9 @@ async function handleDriverToggle(type) {
     
     if (!angleEl || !gameEl || !devEl) return;
 
-    // Mutual exclusion game/dev
     if (type === 'game' && gameEl.checked) devEl.checked = false;
     if (type === 'dev' && devEl.checked) gameEl.checked = false;
 
-    // Update lists
     if (angleEl.checked) { 
         if (!currentAngleList.includes(pkg)) currentAngleList.push(pkg); 
     } else { 
@@ -758,7 +744,7 @@ async function saveKyroosConfig() {
 
         await execShell(configContent);
 
-        // Apply ANGLE
+        // Apply settings
         if (angleVal !== "none") {
             await execShell(`settings put global angle_gl_driver_selection_pkgs "${angleVal}"`);
             await execShell(`settings put global angle_gl_driver_selection_values "${angleVal.split(',').map(() => 'angle').join(',')}"`);
@@ -767,21 +753,19 @@ async function saveKyroosConfig() {
             await execShell(`settings delete global angle_gl_driver_selection_values 2>/dev/null || true`);
         }
 
-        // Apply Game Driver
         if (gameVal !== "none") {
             await execShell(`settings put global game_driver_opt_in_apps "${gameVal}"`);
         } else {
             await execShell(`settings delete global game_driver_opt_in_apps 2>/dev/null || true`);
         }
 
-        // Apply Dev Driver
         if (devVal !== "none") {
             await execShell(`settings put global game_driver_prerelease_opt_in_apps "${devVal}"`);
         } else {
             await execShell(`settings delete global game_driver_prerelease_opt_in_apps 2>/dev/null || true`);
         }
         
-        console.log("Config saved successfully");
+        console.log("Config saved");
     } catch (e) {
         console.error("saveKyroosConfig error:", e);
         throw e;
@@ -793,8 +777,6 @@ async function loadConfig() {
     
     try {
         const result = await execShell(`cat "${CONFIG_PATH}" 2>/dev/null || echo "FILE_NOT_FOUND"`);
-        
-        // Handle kalau result bukan string
         const c = String(result || "");
         
         if (c === "FILE_NOT_FOUND" || c.includes("No such file") || c.trim() === "") {
@@ -806,8 +788,6 @@ async function loadConfig() {
             console.error("Error reading config:", c);
             return;
         }
-        
-        console.log("Config loaded");
         
         const deepSw = document.getElementById('deepSwitch');
         const powerSw = document.getElementById('powerSwitch');
@@ -841,6 +821,7 @@ async function loadConfig() {
         currentDevList = (matchD && matchD[1] !== 'none') ? matchD[1].split(',') : [];
 
         checkInterlock();
+        console.log("Config loaded");
     } catch (e) {
         console.error("loadConfig error:", e);
     }
@@ -878,11 +859,11 @@ async function startOpapsScan() {
         let raw = "";
         
         try {
-            raw = await execShell("cmd package list packages -3 -u");
+            raw = await execShell("cmd package list packages -3 -u 2>/dev/null");
         } catch (e) {}
         
         if (!raw || raw.trim() === "") {
-            raw = await execShell("/system/bin/pm list packages -3 -u");
+            raw = await execShell("pm list packages -3 -u");
         }
         
         const regex = /package:([^\s]+)/g;
@@ -920,7 +901,6 @@ function renderOpapsList(filter = '') {
     if (!container) return;
     
     const filterLower = filter.toLowerCase();
-
     const filtered = opapsPackages.filter(pkg => {
         const label = (infoCache[pkg]?.label || "").toLowerCase();
         return pkg.toLowerCase().includes(filterLower) || label.includes(filterLower);
@@ -941,7 +921,6 @@ function renderOpapsList(filter = '') {
 
     filtered.slice(0, limit).forEach(pkg => {
         const label = infoCache[pkg]?.label || pkg;
-
         const div = document.createElement('div');
         div.className = 'app-card-item';
         div.onclick = () => executeOpapsForApp(pkg);
@@ -1000,17 +979,23 @@ window.onload = async function () {
     console.log("=== KyrooS Initializing ===");
     
     // Tunggu WebView interface siap
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 500));
     
     // Cek KyroosApp
+    let retries = 0;
+    while (typeof KyroosApp === 'undefined' && retries < 10) {
+        console.log("Waiting for KyroosApp...", retries);
+        await new Promise(r => setTimeout(r, 200));
+        retries++;
+    }
+    
     if (typeof KyroosApp === 'undefined') {
-        console.error("KyroosApp not found! Waiting...");
-        // Coba lagi nanti
-        setTimeout(window.onload, 500);
+        console.error("KyroosApp not found after retries!");
+        alert("Error: ADB interface not available");
         return;
     }
     
-    console.log("KyroosApp found:", typeof KyroosApp.executeShell);
+    console.log("KyroosApp ready");
     
     const appConfig = localStorage.getItem('advAppConfig') === 'true';
     const appConfigSw = document.getElementById('appConfigSwitch');
@@ -1024,35 +1009,31 @@ window.onload = async function () {
         mainNav?.classList.add('wide');
     }
     
-    // Jalankan fungsi secara berurutan dengan delay
-    const runSequential = async () => {
-        try {
-            await updateHomeData();
-            console.log("✓ Home data");
-        } catch(e) {
-            console.error("✗ Home data:", e);
-        }
-        
-        await new Promise(r => setTimeout(r, 200));
-        
-        try {
-            await loadConfig();
-            console.log("✓ Config loaded");
-        } catch(e) {
-            console.error("✗ Config:", e);
-        }
-        
-        await new Promise(r => setTimeout(r, 200));
-        
-        try {
-            await fetchCurrentRes();
-            console.log("✓ Resolution");
-        } catch(e) {
-            console.error("✗ Resolution:", e);
-        }
-        
-        console.log("=== Init Complete ===");
-    };
+    // Jalankan fungsi secara berurutan
+    try {
+        await updateHomeData();
+        console.log("✓ Home data");
+    } catch(e) {
+        console.error("✗ Home data:", e);
+    }
     
-    runSequential();
+    await new Promise(r => setTimeout(r, 300));
+    
+    try {
+        await loadConfig();
+        console.log("✓ Config loaded");
+    } catch(e) {
+        console.error("✗ Config:", e);
+    }
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    try {
+        await fetchCurrentRes();
+        console.log("✓ Resolution");
+    } catch(e) {
+        console.error("✗ Resolution:", e);
+    }
+    
+    console.log("=== Init Complete ===");
 };
