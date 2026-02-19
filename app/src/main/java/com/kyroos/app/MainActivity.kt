@@ -23,7 +23,6 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
-import java.lang.reflect.Method
 
 class MainActivity : AppCompatActivity() {
     
@@ -33,7 +32,7 @@ class MainActivity : AppCompatActivity() {
     internal val SHIZUKU_PERMISSION_CODE = 1001
     internal val STORAGE_PERMISSION_CODE = 1002
     
-    internal var shizukuInstalled = false
+    internal var isShizukuAvailable = false
     internal var isShizukuPermissionGranted = false
     internal var isStoragePermissionGranted = false
     internal var hasWriteSecureSettings = false
@@ -42,176 +41,175 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
             isShizukuPermissionGranted = grantResult == PackageManager.PERMISSION_GRANTED
             runOnUiThread {
-                webView.evaluateJavascript("if(window.onShizukuPermissionChanged) window.onShizukuPermissionChanged($isShizukuPermissionGranted);", null)
+                if (isShizukuPermissionGranted) {
+                    Toast.makeText(this, "Shizuku Ready", Toast.LENGTH_SHORT).show()
+                    grantSelfWriteSecureSettings()
+                } else {
+                    Toast.makeText(this, "Shizuku Denied", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        
         context = this
+        webView = findViewById(R.id.webView)
         
-        webView = WebView(this)
-        setContentView(webView)
-        
+        copyAssets()
         setupWebView()
         checkPermissions()
-        copyAssets()
-        
-        shizukuInstalled = checkShizukuInstalled()
-        if (shizukuInstalled) {
-            isShizukuPermissionGranted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
-        }
-        
-        webView.loadUrl("file:///android_asset/www/index.html")
+        setupShizuku()
+        checkWriteSecureSettings()
     }
-
-    private fun setupWebView() {
-        val settings = webView.settings
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.allowFileAccess = true
-        settings.allowContentAccess = true
-        
-        webView.webChromeClient = WebChromeClient()
-        webView.webViewClient = WebViewClient()
-        webView.addJavascriptInterface(KyroosShellInterface(this), "KyroosApp")
-    }
-
-    private fun checkPermissions() {
-        isStoragePermissionGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-        }
-        
-        hasWriteSecureSettings = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
-    }
-
+    
     private fun copyAssets() {
         Thread {
             try {
                 val assetManager = assets
                 val files = assetManager.list("scripts") ?: return@Thread
-                val targetDir = File(getScriptDir())
                 
-                if (!targetDir.exists()) targetDir.mkdirs()
+                // FIX: Pakai getExternalFilesDir agar Shizuku punya akses
+                val scriptDir = File(getExternalFilesDir(null), "scripts")
+                if (!scriptDir.exists()) scriptDir.mkdirs()
 
                 for (filename in files) {
-                    val outFile = File(targetDir, filename)
-                    assetManager.open("scripts/$filename").use { input ->
-                        FileOutputStream(outFile).use { output ->
-                            input.copyTo(output)
-                        }
-                    }
+                    val outFile = File(scriptDir, filename)
+                    val inStream = assetManager.open("scripts/$filename")
+                    val outStream = FileOutputStream(outFile)
+                    inStream.copyTo(outStream)
+                    inStream.close()
+                    outStream.flush()
+                    outStream.close()
+                    
                     outFile.setExecutable(true, false)
                     outFile.setReadable(true, false)
                     outFile.setWritable(true, false)
                 }
-                executeShellSync("chmod -R 777 ${targetDir.absolutePath}")
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+                executeCommand(arrayOf("chmod", "-R", "777", scriptDir.absolutePath))
+            } catch (e: Exception) { }
         }.start()
+    }
+
+    private fun setupWebView() {
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = true
+            allowContentAccess = true
+            loadsImagesAutomatically = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            cacheMode = WebSettings.LOAD_DEFAULT
+        }
+        
+        webView.webViewClient = WebViewClient()
+        webView.webChromeClient = WebChromeClient()
+        webView.addJavascriptInterface(KyroosShellInterface(this), "KyroosApp")
+        
+        webView.loadUrl("file:///android_asset/index.html")
+    }
+    
+    private fun createShizukuProcess(cmdArray: Array<String>): Process {
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(null, cmdArray, null, null) as Process
     }
 
     fun getScriptDir(): String {
-        val externalDir = context.getExternalFilesDir(null)
-        val scriptsDir = File(externalDir, "scripts")
-        if (!scriptsDir.exists()) scriptsDir.mkdirs()
-        return scriptsDir.absolutePath
+        return File(getExternalFilesDir(null), "scripts").absolutePath
     }
 
-    fun executeShell(cmd: String, callbackId: String) {
-        if (!isShizukuPermissionGranted) {
-            webView.post { webView.evaluateJavascript("window.shellCallbacks['$callbackId'].reject('Shizuku permission not granted');", null) }
-            return
-        }
+    fun runScript(scriptName: String, args: String, callbackId: String) {
+        val scriptPath = "${getScriptDir()}/$scriptName"
+        executeShell("sh \"$scriptPath\" $args", callbackId)
+    }
 
+    private fun checkWriteSecureSettings() {
+        try {
+            val result = executeCommand(arrayOf("settings", "get", "global", "angle_gl_driver_selection_pkgs"))
+            hasWriteSecureSettings = !result.contains("SecurityException") && !result.contains("Permission Denial")
+        } catch (e: Exception) {
+            hasWriteSecureSettings = false
+        }
+    }
+    
+    private fun grantSelfWriteSecureSettings() {
         Thread {
             try {
-                val newProcessMethod = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
-                newProcessMethod.isAccessible = true
-                val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
-
-                val reader = BufferedReader(InputStreamReader(process.inputStream))
-                val errorReader = BufferedReader(InputStreamReader(process.errorStream))
-                val output = StringBuilder()
-                var line: String?
-                
-                while (reader.readLine().also { line = it } != null) {
-                    output.append(line).append("\n")
-                }
-                while (errorReader.readLine().also { line = it } != null) {
-                    output.append(line).append("\n")
-                }
-                
+                val process = createShizukuProcess(
+                    arrayOf("pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS")
+                )
                 process.waitFor()
-                val result = output.toString().trim()
-                webView.post { webView.evaluateJavascript("window.shellCallbacks['$callbackId'].resolve(`${result.replace("`", "\\`")}`);", null) }
+                checkWriteSecureSettings()
+            } catch (e: Exception) { }
+        }.start()
+    }
+    
+    private fun checkPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            isStoragePermissionGranted = Environment.isExternalStorageManager()
+        } else {
+            isStoragePermissionGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun setupShizuku() {
+        try {
+            Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+            if (Shizuku.pingBinder()) {
+                isShizukuAvailable = true
+                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                    Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
+                } else {
+                    isShizukuPermissionGranted = true
+                    grantSelfWriteSecureSettings()
+                }
+            }
+        } catch (e: Exception) { }
+    }
+    
+    fun executeShell(command: String, callbackId: String) {
+        Thread {
+            try {
+                val result = executeCommand(arrayOf("sh", "-c", command))
+                runOnUiThread {
+                    val escaped = result.replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+                    webView.evaluateJavascript("window.shellCallback('$callbackId', '$escaped', false)", null)
+                }
             } catch (e: Exception) {
-                webView.post { webView.evaluateJavascript("window.shellCallbacks['$callbackId'].reject(`${e.message}`);", null) }
+                runOnUiThread {
+                    webView.evaluateJavascript("window.shellCallback('$callbackId', 'Error: ${e.message}', true)", null)
+                }
             }
         }.start()
     }
 
-    fun runScript(name: String, args: String, callbackId: String) {
-        val scriptPath = File(getScriptDir(), name).absolutePath
-        val fullCmd = "sh $scriptPath $args"
-        executeShell(fullCmd, callbackId)
-    }
-
-    fun executeShellSync(cmd: String): String {
-        if (!isShizukuPermissionGranted) return "Error: Shizuku permission not granted"
+    private fun executeCommand(cmdArray: Array<String>): String {
+        if (!isShizukuAvailable || !isShizukuPermissionGranted) return "Error: Shizuku not ready"
         return try {
-            val newProcessMethod = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
-            newProcessMethod.isAccessible = true
-            val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
-
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val output = StringBuilder()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                output.append(line).append("\n")
-            }
+            val process = createShizukuProcess(cmdArray)
+            val output = process.inputStream.bufferedReader().readText()
+            val error = process.errorStream.bufferedReader().readText()
             process.waitFor()
-            output.toString().trim()
-        } catch (e: Exception) {
-            "Error: ${e.message}"
-        }
+            if (output.isNotEmpty()) output.trim() else error.trim()
+        } catch (e: Exception) { "Error: ${e.message}" }
     }
-
-    fun checkShizukuInstalled(): Boolean {
-        return try {
-            packageManager.getPackageInfo("moe.shizuku.privileged.api", 0)
-            true
-        } catch (e: PackageManager.NameNotFoundException) {
-            false
-        }
-    }
-
-    fun hasSettingsPermission(): Boolean = hasWriteSecureSettings
     
-    fun getShizukuStatus(): String = when {
-        !shizukuInstalled -> "not_installed"
-        !isShizukuPermissionGranted -> "no_permission"
-        else -> "ready"
-    }
+    fun executeShellSync(command: String): String = executeCommand(arrayOf("sh", "-c", command))
+    fun isShizukuAvailable(): Boolean = isShizukuAvailable && isShizukuPermissionGranted
+    fun hasSettingsPermission(): Boolean = hasWriteSecureSettings
+    fun getShizukuStatus(): String = if (isShizukuAvailable && isShizukuPermissionGranted) "ready" else "no_permission"
     
     fun requestShizukuPermission() {
-        if (shizukuInstalled && !isShizukuPermissionGranted) {
-            Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
-        } else if (!shizukuInstalled) {
-            Toast.makeText(this, "Shizuku not running", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    fun isStorageGranted(): Boolean = isStoragePermissionGranted
-
-    override fun onDestroy() {
-        super.onDestroy()
-        Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+        if (isShizukuAvailable) Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
     }
 }
 
@@ -220,9 +218,8 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface fun runScript(name: String, args: String, id: String) = activity.runScript(name, args, id)
     @JavascriptInterface fun getScriptDir(): String = activity.getScriptDir()
     @JavascriptInterface fun executeShellSync(cmd: String): String = activity.executeShellSync(cmd)
-    @JavascriptInterface fun isShizukuAvailable(): Boolean = activity.checkShizukuInstalled()
+    @JavascriptInterface fun isShizukuAvailable(): Boolean = activity.isShizukuAvailable()
     @JavascriptInterface fun hasSettingsPermission(): Boolean = activity.hasSettingsPermission()
     @JavascriptInterface fun getShizukuStatus(): String = activity.getShizukuStatus()
     @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
-    @JavascriptInterface fun isStorageGranted(): Boolean = activity.isStorageGranted()
 }
