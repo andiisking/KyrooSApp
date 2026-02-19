@@ -23,6 +23,7 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.lang.reflect.Method
 
 class MainActivity : AppCompatActivity() {
     
@@ -32,7 +33,7 @@ class MainActivity : AppCompatActivity() {
     internal val SHIZUKU_PERMISSION_CODE = 1001
     internal val STORAGE_PERMISSION_CODE = 1002
     
-    internal var isShizukuAvailable = false
+    internal var shizukuInstalled = false
     internal var isShizukuPermissionGranted = false
     internal var isStoragePermissionGranted = false
     internal var hasWriteSecureSettings = false
@@ -57,8 +58,8 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
         copyAssets()
         
-        isShizukuAvailable = isShizukuInstalled()
-        if (isShizukuAvailable) {
+        shizukuInstalled = checkShizukuInstalled()
+        if (shizukuInstalled) {
             isShizukuPermissionGranted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
             Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
         }
@@ -130,7 +131,10 @@ class MainActivity : AppCompatActivity() {
 
         Thread {
             try {
-                val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+                val newProcessMethod = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+                newProcessMethod.isAccessible = true
+                val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
+
                 val reader = BufferedReader(InputStreamReader(process.inputStream))
                 val errorReader = BufferedReader(InputStreamReader(process.errorStream))
                 val output = StringBuilder()
@@ -161,7 +165,10 @@ class MainActivity : AppCompatActivity() {
     fun executeShellSync(cmd: String): String {
         if (!isShizukuPermissionGranted) return "Error: Shizuku permission not granted"
         return try {
-            val process = Shizuku.newProcess(arrayOf("sh", "-c", cmd), null, null)
+            val newProcessMethod = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+            newProcessMethod.isAccessible = true
+            val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
+
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val output = StringBuilder()
             var line: String?
@@ -175,7 +182,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun isShizukuInstalled(): Boolean {
+    fun checkShizukuInstalled(): Boolean {
         return try {
             packageManager.getPackageInfo("moe.shizuku.privileged.api", 0)
             true
@@ -187,15 +194,15 @@ class MainActivity : AppCompatActivity() {
     fun hasSettingsPermission(): Boolean = hasWriteSecureSettings
     
     fun getShizukuStatus(): String = when {
-        !isShizukuAvailable -> "not_installed"
+        !shizukuInstalled -> "not_installed"
         !isShizukuPermissionGranted -> "no_permission"
         else -> "ready"
     }
     
     fun requestShizukuPermission() {
-        if (isShizukuAvailable && !isShizukuPermissionGranted) {
+        if (shizukuInstalled && !isShizukuPermissionGranted) {
             Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
-        } else if (!isShizukuAvailable) {
+        } else if (!shizukuInstalled) {
             Toast.makeText(this, "Shizuku not running", Toast.LENGTH_SHORT).show()
         }
     }
@@ -213,7 +220,7 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface fun runScript(name: String, args: String, id: String) = activity.runScript(name, args, id)
     @JavascriptInterface fun getScriptDir(): String = activity.getScriptDir()
     @JavascriptInterface fun executeShellSync(cmd: String): String = activity.executeShellSync(cmd)
-    @JavascriptInterface fun isShizukuAvailable(): Boolean = activity.isShizukuAvailable()
+    @JavascriptInterface fun isShizukuAvailable(): Boolean = activity.checkShizukuInstalled()
     @JavascriptInterface fun hasSettingsPermission(): Boolean = activity.hasSettingsPermission()
     @JavascriptInterface fun getShizukuStatus(): String = activity.getShizukuStatus()
     @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
