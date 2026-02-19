@@ -42,8 +42,8 @@ class MainActivity : AppCompatActivity() {
     internal var isStoragePermissionGranted = false
     internal var hasWriteSecureSettings = false
     
-    private val iconCache = mutableMapOf<String, String>()
-    private val labelCache = mutableMapOf<String, String>()
+    internal val iconCache = mutableMapOf<String, String>()
+    internal val labelCache = mutableMapOf<String, String>()
     
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
