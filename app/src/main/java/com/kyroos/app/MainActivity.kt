@@ -4,11 +4,14 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -18,8 +21,10 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
@@ -36,6 +41,9 @@ class MainActivity : AppCompatActivity() {
     internal var isShizukuPermissionGranted = false
     internal var isStoragePermissionGranted = false
     internal var hasWriteSecureSettings = false
+    
+    private val iconCache = mutableMapOf<String, String>()
+    private val labelCache = mutableMapOf<String, String>()
     
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
@@ -71,7 +79,6 @@ class MainActivity : AppCompatActivity() {
                 val assetManager = assets
                 val files = assetManager.list("scripts") ?: return@Thread
                 
-                // FIX: Pakai getExternalFilesDir agar Shizuku punya akses
                 val scriptDir = File(getExternalFilesDir(null), "scripts")
                 if (!scriptDir.exists()) scriptDir.mkdirs()
 
@@ -211,6 +218,55 @@ class MainActivity : AppCompatActivity() {
     fun requestShizukuPermission() {
         if (isShizukuAvailable) Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
     }
+    
+    fun getAppIcon(packageName: String): Bitmap? {
+        return try {
+            val packageManager = packageManager
+            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+            val drawable = applicationInfo.loadIcon(packageManager)
+            
+            val bitmap = Bitmap.createBitmap(
+                drawable.intrinsicWidth, 
+                drawable.intrinsicHeight, 
+                Bitmap.Config.ARGB_8888
+            )
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bitmap
+        } catch (e: PackageManager.NameNotFoundException) {
+            null
+        }
+    }
+    
+    fun bitmapToBase64(bitmap: Bitmap): String {
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+        val byteArray = stream.toByteArray()
+        return Base64.encodeToString(byteArray, Base64.DEFAULT)
+    }
+    
+    fun getAppLabel(packageName: String): String {
+        labelCache[packageName]?.let { return it }
+        
+        val label = try {
+            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+            packageManager.getApplicationLabel(applicationInfo).toString()
+        } catch (e: PackageManager.NameNotFoundException) {
+            packageName.split('.').lastOrNull() ?: packageName
+        }
+        
+        labelCache[packageName] = label
+        return label
+    }
+    
+    fun getAppLabelsBatch(packages: Array<String>): String {
+        val json = JSONObject()
+        for (pkg in packages) {
+            json.put(pkg, getAppLabel(pkg))
+        }
+        return json.toString()
+    }
 }
 
 class KyroosShellInterface(private val activity: MainActivity) {
@@ -222,4 +278,31 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface fun hasSettingsPermission(): Boolean = activity.hasSettingsPermission()
     @JavascriptInterface fun getShizukuStatus(): String = activity.getShizukuStatus()
     @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
+    
+    @JavascriptInterface 
+    fun getAppIconBase64(pkg: String): String {
+        if (activity.iconCache.containsKey(pkg)) {
+            return activity.iconCache[pkg] ?: ""
+        }
+        
+        val bitmap = activity.getAppIcon(pkg)
+        val base64 = if (bitmap != null) {
+            "data:image/png;base64," + activity.bitmapToBase64(bitmap)
+        } else {
+            ""
+        }
+        
+        activity.iconCache[pkg] = base64
+        return base64
+    }
+    
+    @JavascriptInterface
+    fun getAppLabel(pkg: String): String {
+        return activity.getAppLabel(pkg)
+    }
+    
+    @JavascriptInterface
+    fun getAppLabelsBatch(packages: Array<String>): String {
+        return activity.getAppLabelsBatch(packages)
+    }
 }

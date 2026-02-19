@@ -180,11 +180,35 @@ let currentAngleList = [];
 let currentGameList = [];
 let currentDevList = [];
 
+async function loadAppIconsAndLabels(pkgs) {
+    const promises = pkgs.map(async pkg => {
+        if (!infoCache[pkg]) infoCache[pkg] = {};
+        
+        const iconBase64 = KyroosApp.getAppIconBase64(pkg);
+        if (iconBase64) {
+            infoCache[pkg].icon = iconBase64;
+        }
+        
+        const label = KyroosApp.getAppLabel(pkg);
+        infoCache[pkg].label = label;
+    });
+    
+    await Promise.all(promises);
+}
+
 function openAppDetail(pkg) {
     currentDetailPkg = pkg;
     const cache = infoCache[pkg] || {};
     document.getElementById('detailAppLabel').innerText = cache.label || pkg;
     document.getElementById('detailAppPkg').innerText = pkg;
+
+    const iconBase64 = cache.icon || '';
+    const detailIcon = document.getElementById('detailAppIcon');
+    if (iconBase64 && detailIcon) {
+        detailIcon.innerHTML = `<img src="${iconBase64}" class="app-icon-image">`;
+    } else {
+        detailIcon.innerHTML = '<i class="fas fa-android"></i>';
+    }
 
     document.getElementById('angleSwitch').checked = currentAngleList.includes(pkg);
     document.getElementById('gameSwitch').checked = currentGameList.includes(pkg);
@@ -304,21 +328,13 @@ async function startAppScan() {
         allPackages = rawList.slice(0, 500);
         allPackages.sort();
         
-        await loadLabels(allPackages);
+        await loadAppIconsAndLabels(allPackages);
         renderAppList();
     } catch (e) {
         container.innerHTML = '<div class="empty-state">Failed to load apps</div>';
     } finally {
         isScanning = false;
     }
-}
-
-async function loadLabels(pkgs) {
-    pkgs.forEach(pkg => {
-        if (!infoCache[pkg]) infoCache[pkg] = {};
-        const parts = pkg.split('.');
-        infoCache[pkg].label = parts[parts.length - 1];
-    });
 }
 
 function renderAppList(filter = '') {
@@ -345,14 +361,19 @@ function renderAppList(filter = '') {
     filtered.slice(0, renderLimit).forEach(pkg => {
         const cached = infoCache[pkg];
         const label = cached?.label || pkg;
+        const iconBase64 = cached?.icon || '';
 
         const div = document.createElement('div');
         div.className = 'app-card-item';
         div.onclick = () => openAppDetail(pkg);
 
+        const iconHtml = iconBase64 
+            ? `<img src="${iconBase64}" class="app-icon-image">` 
+            : '<i class="fas fa-android"></i>';
+
         div.innerHTML = `
             <div class="app-icon-placeholder">
-                <i class="fas fa-android"></i>
+                ${iconHtml}
             </div>
             <div class="app-card-info">
                 <div class="app-card-title">${escapeHtml(label)}</div>
@@ -652,7 +673,7 @@ async function startOpapsScan() {
             .slice(0, 200);
 
         opapsPackages.sort();
-        await loadLabels(opapsPackages);
+        await loadAppIconsAndLabels(opapsPackages);
 
         document.getElementById('opapsInitState').style.display = 'none';
         document.getElementById('opapsSearch').classList.add('show');
@@ -690,14 +711,19 @@ function renderOpapsList(filter = '') {
     filtered.slice(0, renderLimit).forEach(pkg => {
         const cached = infoCache[pkg];
         const label = cached?.label || pkg;
+        const iconBase64 = cached?.icon || '';
 
         const div = document.createElement('div');
         div.className = 'app-card-item';
         div.onclick = () => executeOpapsForApp(pkg);
 
+        const iconHtml = iconBase64 
+            ? `<img src="${iconBase64}" class="app-icon-image">` 
+            : '<i class="fas fa-android"></i>';
+
         div.innerHTML = `
             <div class="app-icon-placeholder">
-                <i class="fas fa-android"></i>
+                ${iconHtml}
             </div>
             <div class="app-card-info">
                 <div class="app-card-title">${escapeHtml(label)}</div>

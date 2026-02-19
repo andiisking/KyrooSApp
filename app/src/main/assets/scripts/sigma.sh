@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-CONFIG_FILE="/storage/emulated/0/kikiros"
+CONFIG_FILE="/storage/emulated/0/Android/data/com.kyroos.app/files/scripts/kyroos.con"
 
 while true; do
     if [ -f "$CONFIG_FILE" ]; then
