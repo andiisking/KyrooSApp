@@ -1,14 +1,15 @@
-const CONFIG_PATH = "/storage/emulated/0/kikiros";
+let CONFIG_PATH = "";
+let SCRIPTS_DIR = "";
 
-let allPackages = [];
-let infoCache = {};
-let currentDetailPkg = "";
-let currentAngleList = [];
-let currentGameList = [];
-let currentDevList = [];
-let opapsPackages = [];
-let selectedOpapsPkg = "";
-let isScanning = false;
+function initializePaths() {
+    if (typeof KyroosApp !== 'undefined' && KyroosApp) {
+        SCRIPTS_DIR = KyroosApp.getScriptDir() || "";
+        CONFIG_PATH = SCRIPTS_DIR + "/kyroos.conf";
+    } else {
+        SCRIPTS_DIR = "/data/data/com.kyroos.app/files/scripts";
+        CONFIG_PATH = SCRIPTS_DIR + "/kyroos.conf";
+    }
+}
 
 function safeJSONParse(str) { 
     try { return JSON.parse(str); } 
@@ -34,24 +35,38 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+async function runScriptFile(filename, args = "") {
+    return new Promise((resolve, reject) => {
+        const callbackId = 'script_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        window.shellCallbacks = window.shellCallbacks || {};
+        window.shellCallbacks[callbackId] = { resolve, reject };
+        
+        if (typeof KyroosApp !== 'undefined' && KyroosApp.runScript) {
+            KyroosApp.runScript(filename, args, callbackId);
+        } else {
+            delete window.shellCallbacks[callbackId];
+            reject(new Error("KyroosApp.runScript interface unavailable"));
+            return;
+        }
+        
+        setTimeout(() => {
+            if (window.shellCallbacks[callbackId]) {
+                delete window.shellCallbacks[callbackId];
+                reject(new Error("Script execution timeout"));
+            }
+        }, 30000);
+    });
+}
+
 async function execShell(command) {
     return new Promise((resolve, reject) => {
         try {
             if (typeof KyroosApp === 'undefined' || !KyroosApp) {
-                updateShizukuUI('no_interface');
                 reject(new Error("KyroosApp interface unavailable"));
                 return;
             }
 
-            const shizukuStatus = KyroosApp.getShizukuStatus?.() || 'unknown';
-            if (shizukuStatus !== 'ready') {
-                updateShizukuUI(shizukuStatus);
-                reject(new Error("Shizuku not ready: " + shizukuStatus));
-                return;
-            }
-
-            console.log("Executing:", command.substring(0, 100) + (command.length > 100 ? '...' : ''));
-            
             const callbackId = 'cmd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
             if (!window.shellCallbacks) {
@@ -63,28 +78,21 @@ async function execShell(command) {
             
             setTimeout(() => {
                 if (window.shellCallbacks[callbackId]) {
-                    console.warn(`Command timeout: ${command.substring(0, 50)}...`);
                     window.shellCallbacks[callbackId].reject(new Error("Command timeout"));
                     delete window.shellCallbacks[callbackId];
                 }
             }, 30000);
             
         } catch (e) {
-            console.error("Execution exception:", e);
-            if (e.message?.includes('Shizuku')) {
-                updateShizukuUI('error');
-            }
             reject(e);
         }
     });
 }
 
 window.shellCallback = function(callbackId, result, isError) {
-    console.log(`Shell callback ${callbackId}:`, isError ? 'ERROR' : 'SUCCESS');
-    
     if (window.shellCallbacks && window.shellCallbacks[callbackId]) {
-        if (isError) {
-            window.shellCallbacks[callbackId].reject(new Error(result));
+        if (isError === true || isError === 'true' || isError === 1) {
+            window.shellCallbacks[callbackId].reject(new Error(result || 'Unknown error'));
         } else {
             window.shellCallbacks[callbackId].resolve(result || '');
         }
@@ -98,135 +106,10 @@ function execShellSync(command) {
     }
     
     try {
-        console.log("Exec sync:", command);
         return KyroosApp.executeShellSync(command);
     } catch (e) {
-        console.error("Sync execution error:", e);
         return "Error: " + e.message;
     }
-}
-
-async function checkShizukuStatus() {
-    try {
-        if (typeof KyroosApp === 'undefined' || !KyroosApp) {
-            updateShizukuUI('no_interface');
-            return { available: false, status: 'no_interface' };
-        }
-        
-        const status = KyroosApp.getShizukuStatus();
-        const available = KyroosApp.isShizukuAvailable();
-        updateShizukuUI(status);
-        
-        return { available, status };
-    } catch (e) {
-        console.error("Status check error:", e);
-        updateShizukuUI('error');
-        return { available: false, status: 'error' };
-    }
-}
-
-function updateShizukuUI(status) {
-    const card = document.getElementById('shizukuCard');
-    const badge = document.getElementById('shizukuBadge');
-    const desc = document.getElementById('shizukuDesc');
-    const actions = document.getElementById('shizukuActions');
-    const icon = document.querySelector('#shizukuCard .shizuku-icon-wrapper i');
-    
-    if (!card || !badge || !desc || !actions) return;
-    
-    card.className = 'card shizuku-card';
-    
-    switch(status) {
-        case 'ready':
-            card.classList.add('status-ready');
-            badge.className = 'shizuku-badge ready';
-            badge.innerHTML = '● Ready';
-            desc.innerHTML = 'Shizuku is active and ready';
-            actions.innerHTML = '';
-            if (icon) icon.className = 'fas fa-check-circle';
-            break;
-            
-        case 'no_permission':
-            card.classList.add('status-warning');
-            badge.className = 'shizuku-badge warning';
-            badge.innerHTML = '⚠ Permission';
-            desc.innerHTML = 'Shizuku permission required';
-            actions.innerHTML = `
-                <button class="shizuku-btn" onclick="requestShizukuPermission()">
-                    <i class="fas fa-shield-alt"></i> Grant
-                </button>
-            `;
-            if (icon) icon.className = 'fas fa-exclamation-triangle';
-            break;
-            
-        case 'not_installed':
-            card.classList.add('status-error');
-            badge.className = 'shizuku-badge error';
-            badge.innerHTML = '✗ Missing';
-            desc.innerHTML = 'Shizuku is not installed';
-            actions.innerHTML = `
-                <button class="shizuku-btn" onclick="openShizukuDownload()">
-                    <i class="fas fa-download"></i> Install
-                </button>
-            `;
-            if (icon) icon.className = 'fas fa-times-circle';
-            
-            if (!document.getElementById('shizukuGuide')) {
-                const guide = document.createElement('div');
-                guide.id = 'shizukuGuide';
-                guide.className = 'shizuku-guide';
-                guide.innerHTML = `
-                    Download from 
-                    <a href="#" onclick="openShizukuDownloadLink()">
-                        <i class="fas fa-external-link-alt"></i> rikka.app
-                    </a>
-                `;
-                card.appendChild(guide);
-            }
-            break;
-            
-        case 'no_interface':
-        case 'error':
-        default:
-            card.classList.add('status-error');
-            badge.className = 'shizuku-badge error';
-            badge.innerHTML = '✗ Error';
-            desc.innerHTML = 'Failed to connect to Shizuku';
-            actions.innerHTML = '';
-            if (icon) icon.className = 'fas fa-exclamation-circle';
-            
-            const existingGuide = document.getElementById('shizukuGuide');
-            if (existingGuide) existingGuide.remove();
-            break;
-    }
-}
-
-function requestShizukuPermission() {
-    if (typeof KyroosApp !== 'undefined' && KyroosApp) {
-        KyroosApp.requestShizukuPermission();
-        
-        const btn = document.querySelector('#shizukuActions .shizuku-btn');
-        if (btn) {
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Requesting...';
-            btn.disabled = true;
-            
-            setTimeout(() => {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-                checkShizukuStatus();
-            }, 2000);
-        }
-    }
-}
-
-function openShizukuDownload() {
-    window.open('https://shizuku.rikka.app/download/', '_blank');
-}
-
-function openShizukuDownloadLink() {
-    window.open('https://shizuku.rikka.app/download/', '_blank');
-    return false;
 }
 
 function switchTab(tabId) {
@@ -287,10 +170,15 @@ function closeDevModal() {
 async function openTgLink(url) {
     try {
         await execShell(`am start -a android.intent.action.VIEW -d "${url}"`);
-    } catch (e) {
-        console.error("Failed to open link:", e);
-    }
+    } catch (e) {}
 }
+
+let allPackages = [];
+let infoCache = {};
+let currentDetailPkg = "";
+let currentAngleList = [];
+let currentGameList = [];
+let currentDevList = [];
 
 function openAppDetail(pkg) {
     currentDetailPkg = pkg;
@@ -345,9 +233,7 @@ async function updateHomeData() {
         document.getElementById('kernelInfo').innerText = kernel.trim() || "Unknown";
 
         checkStatus();
-    } catch (e) {
-        console.error("Home data error:", e);
-    }
+    } catch (e) {}
 }
 
 async function checkStatus() {
@@ -372,25 +258,24 @@ async function checkStatus() {
             title.innerText = 'Service Idle';
             desc.innerText = 'Enable in settings';
         }
-    } catch (e) {
-        console.error("Status check error:", e);
-    }
+    } catch (e) {}
 }
 
 async function toggleSigma(el) {
     try {
         if (el.checked) {
-            await execShell("nohup sigma > /dev/null 2>&1 &");
+            await runScriptFile("sigma.sh", ""); 
         } else {
             await execShell("pkill -f sigma");
             await execShell("pkill -f sigma");
         }
         setTimeout(checkStatus, 500);
     } catch (e) {
-        console.error("Toggle sigma error:", e);
         el.checked = !el.checked;
     }
 }
+
+let isScanning = false;
 
 async function startAppScan() {
     if (isScanning) return;
@@ -402,7 +287,7 @@ async function startAppScan() {
     container.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading list...</div>';
 
     try {
-        const raw = await execShell("cmd package list packages -3 -u").catch(() => "");
+        const raw = await execShell("cmd package list packages -u").catch(() => "");
         let rawList = [];
         
         if (raw && raw.includes("package:")) {
@@ -422,7 +307,6 @@ async function startAppScan() {
         await loadLabels(allPackages);
         renderAppList();
     } catch (e) {
-        console.error("Scan error:", e);
         container.innerHTML = '<div class="empty-state">Failed to load apps</div>';
     } finally {
         isScanning = false;
@@ -639,6 +523,7 @@ async function applyCustomSave() {
 
 async function saveKyroosConfig() {
     try {
+        initializePaths();
         const d = document.getElementById('deepSwitch').checked ? "on" : "off";
         const p = document.getElementById('powerSwitch').checked ? "on" : "off";
         const c = document.getElementById('cacheSwitch').checked ? "on" : "off";
@@ -651,45 +536,46 @@ async function saveKyroosConfig() {
         const gameVal = cleanList(currentGameList).join(',') || "none";
         const devVal = cleanList(currentDevList).join(',') || "none";
 
-        const commands = [
-            `echo "deep=${d}" > "${CONFIG_PATH}"`,
-            `echo "power=${p}" >> "${CONFIG_PATH}"`,
-            `echo "chace=${c}" >> "${CONFIG_PATH}"`,
-            `echo "brutal=${b}" >> "${CONFIG_PATH}"`,
-            `echo "cossave=${finalCustom}" >> "${CONFIG_PATH}"`,
-            `echo "angle=${angleVal}" >> "${CONFIG_PATH}"`,
-            `echo "game=${gameVal}" >> "${CONFIG_PATH}"`,
-            `echo "dev=${devVal}" >> "${CONFIG_PATH}"`
-        ];
+        const configContent = [
+            `deep=${d}`,
+            `power=${p}`,
+            `chace=${c}`,
+            `brutal=${b}`,
+            `cossave=${finalCustom}`,
+            `angle=${angleVal}`,
+            `game=${gameVal}`,
+            `dev=${devVal}`
+        ].join('\n');
 
-        await execShell(commands.join(' && '));
+        await execShell(`echo "${configContent}" > ${CONFIG_PATH}`);
 
-        if (angleVal !== "none") {
-            await execShell(`settings put global angle_gl_driver_selection_pkgs "${angleVal}"`);
-            await execShell(`settings put global angle_gl_driver_selection_values "${angleVal.split(',').map(() => 'angle').join(',')}"`);
-        } else {
-            await execShell(`settings delete global angle_gl_driver_selection_pkgs`);
-            await execShell(`settings delete global angle_gl_driver_selection_values`);
+        if (KyroosApp.hasSettingsPermission && KyroosApp.hasSettingsPermission()) {
+            if (angleVal !== "none") {
+                await execShell(`settings put global angle_gl_driver_selection_pkgs "${angleVal}"`);
+                await execShell(`settings put global angle_gl_driver_selection_values "${angleVal.split(',').map(() => 'angle').join(',')}"`);
+            } else {
+                await execShell(`settings delete global angle_gl_driver_selection_pkgs`);
+                await execShell(`settings delete global angle_gl_driver_selection_values`);
+            }
+
+            if (gameVal !== "none") {
+                await execShell(`settings put global game_driver_opt_in_apps "${gameVal}"`);
+            } else {
+                await execShell(`settings delete global game_driver_opt_in_apps`);
+            }
+
+            if (devVal !== "none") {
+                await execShell(`settings put global game_driver_prerelease_opt_in_apps "${devVal}"`);
+            } else {
+                await execShell(`settings delete global game_driver_prerelease_opt_in_apps`);
+            }
         }
-
-        if (gameVal !== "none") {
-            await execShell(`settings put global game_driver_opt_in_apps "${gameVal}"`);
-        } else {
-            await execShell(`settings delete global game_driver_opt_in_apps`);
-        }
-
-        if (devVal !== "none") {
-            await execShell(`settings put global game_driver_prerelease_opt_in_apps "${devVal}"`);
-        } else {
-            await execShell(`settings delete global game_driver_prerelease_opt_in_apps`);
-        }
-    } catch (e) {
-        console.error("Save config error:", e);
-    }
+    } catch (e) {}
 }
 
 async function loadConfig() {
     try {
+        initializePaths();
         const configContent = await execShell(`cat ${CONFIG_PATH}`).catch(() => "");
         if (configContent && !configContent.includes("No such file") && configContent.length > 0) {
             document.getElementById('deepSwitch').checked = configContent.includes('deep=on');
@@ -717,10 +603,11 @@ async function loadConfig() {
 
             checkInterlock();
         }
-    } catch (e) {
-        console.error("Load config error:", e);
-    }
+    } catch (e) {}
 }
+
+let opapsPackages = [];
+let selectedOpapsPkg = "";
 
 function openOpapsPage() {
     document.getElementById('opapsPage').classList.add('open');
@@ -765,7 +652,6 @@ async function startOpapsScan() {
             .slice(0, 200);
 
         opapsPackages.sort();
-
         await loadLabels(opapsPackages);
 
         document.getElementById('opapsInitState').style.display = 'none';
@@ -847,7 +733,7 @@ async function runOpapsConfirmed() {
     closeOpapsConfirm();
 
     try {
-        await execShell(`nohup opaps ${pkg}`);
+        await runScriptFile("opaps.sh", pkg); 
         alert(`Success! Opaps applied to ${pkg}.`);
     } catch (e) {
         alert(`Failed to execute Opaps: ${e}`);
@@ -856,7 +742,9 @@ async function runOpapsConfirmed() {
     closeOpapsPage();
 }
 
-window.onload = function () {
+window.onload = async function () {
+    initializePaths();
+    
     const appConfigEnabled = localStorage.getItem('advAppConfig') === 'true';
     document.getElementById('appConfigSwitch').checked = appConfigEnabled;
     
@@ -866,16 +754,12 @@ window.onload = function () {
     }
     
     updateHomeData();
-    loadConfig();
+    await loadConfig();
     fetchCurrentRes();
-    
-    setTimeout(() => {
-        checkShizukuStatus();
-    }, 500);
 };
 
 setInterval(() => {
     if (document.visibilityState === 'visible') {
-        checkShizukuStatus();
+        checkStatus();
     }
 }, 5000);

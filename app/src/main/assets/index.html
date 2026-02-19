@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Kyroos Module</title>
     
-    <!-- FONT AWESOME (offline) - HAPUS material icons -->
     <link rel="stylesheet" href="css/all.min.css">
     
     <link rel="stylesheet" href="style.css">
@@ -20,27 +19,7 @@
     </header>
 
     <main class="main-content">
-        <!-- HOME TAB -->
         <section id="home" class="tab-section active">
-            <!-- SHIZUKU STATUS CARD -->
-            <div class="card shizuku-card" id="shizukuCard">
-                <div class="shizuku-header">
-                    <div class="shizuku-left">
-                        <div class="shizuku-icon-wrapper">
-                            <i class="fas fa-shield-alt"></i>
-                        </div>
-                        <div class="shizuku-info">
-                            <div class="shizuku-title">
-                                <span>Shizuku</span>
-                                <span class="shizuku-badge" id="shizukuBadge">● Checking...</span>
-                            </div>
-                            <div class="shizuku-desc" id="shizukuDesc">Verifying Shizuku's status... </div>
-                        </div>
-                    </div>
-                    <div class="shizuku-actions" id="shizukuActions"></div>
-                </div>
-            </div>
-
             <div class="card status-hero" id="statusCard">
                 <div class="status-header">
                     <span class="status-icon"><i class="fas fa-hourglass-half"></i></span>
@@ -71,7 +50,6 @@
             </div>
         </section>
 
-        <!-- APPS TAB -->
         <section id="apps" class="tab-section">
             <div id="appInitState" class="empty-state">
                 <i class="fas fa-apps" style="font-size: 48px; opacity: 0.5;"></i>
@@ -86,7 +64,6 @@
             <div id="app-count-info" style="text-align: center; font-size: 12px; opacity: 0.5; margin-top: 10px; display: none;"></div>
         </section>
 
-        <!-- SETTINGS TAB -->
         <section id="settings" class="tab-section">
             <div class="card">
                 <div class="settings-item">
@@ -128,7 +105,6 @@
         </section>
     </main>
 
-    <!-- CONFIG PAGE -->
     <div id="configPage" class="sub-page">
         <div class="sub-header">
             <button class="back-btn" onclick="closeConfigPage()"><i class="fas fa-arrow-left"></i></button>
@@ -166,7 +142,6 @@
         </div>
     </div>
 
-    <!-- TWEAK PAGE -->
     <div id="tweakPage" class="sub-page">
         <div class="sub-header">
             <button class="back-btn" onclick="closeTweakPage()"><i class="fas fa-arrow-left"></i></button>
@@ -212,7 +187,6 @@
         </div>
     </div>
 
-    <!-- APP DETAIL PAGE -->
     <div id="appDetailPage" class="sub-page">
         <div class="sub-header">
             <button class="back-btn" onclick="closeAppDetail()"><i class="fas fa-arrow-left"></i></button>
@@ -265,7 +239,6 @@
         </div>
     </div>
 
-    <!-- OPAPS PAGE -->
     <div id="opapsPage" class="sub-page">
         <div class="sub-header">
             <button class="back-btn" onclick="closeOpapsPage()"><i class="fas fa-arrow-left"></i></button>
@@ -288,7 +261,6 @@
         </div>
     </div>
 
-    <!-- MODALS -->
     <div id="confirmModal" class="modal-overlay">
         <div class="modal-box">
             <i class="fas fa-exclamation-triangle" style="font-size:48px; color: var(--md-primary); margin-bottom: 16px;"></i>
@@ -342,7 +314,6 @@
         </div>
     </div>
 
-    <!-- NAVBAR -->
     <nav class="nav-container" id="mainNav">
         <div class="nav-item active" id="nav-home" onclick="switchTab('home')">
             <div class="nav-pill"><i class="fas fa-home"></i></div>
