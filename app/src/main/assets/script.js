@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 andiisking 
+ * Copyright 2024 andiisking (KyrooS Developer)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- */
+ *
+*/
 let CONFIG_PATH = "";
 let SCRIPTS_DIR = "";
 let SETUP_FLAG = "setup_completed";
@@ -229,10 +230,11 @@ async function loadAppIconsAndLabels(pkgs) {
 }
 
 function openAppDetail(pkg) {
-    currentDetailPkg = pkg;
-    const cache = infoCache[pkg] || {};
-    document.getElementById('detailAppLabel').innerText = cache.label || pkg;
-    document.getElementById('detailAppPkg').innerText = pkg;
+    const cleanPkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+    currentDetailPkg = cleanPkg;
+    const cache = infoCache[cleanPkg] || {};
+    document.getElementById('detailAppLabel').innerText = cache.label || cleanPkg;
+    document.getElementById('detailAppPkg').innerText = cleanPkg;
 
     const iconBase64 = cache.icon || '';
     const detailIconBox = document.querySelector('.app-detail-hero .detail-icon-box');
@@ -244,13 +246,13 @@ function openAppDetail(pkg) {
         }
     }
 
-    document.getElementById('angleSwitch').checked = currentAngleList.includes(pkg);
-    document.getElementById('gameSwitch').checked = currentGameList.includes(pkg);
-    document.getElementById('devSwitch').checked = currentDevList.includes(pkg);
+    document.getElementById('angleSwitch').checked = currentAngleList.includes(cleanPkg);
+    document.getElementById('gameSwitch').checked = currentGameList.includes(cleanPkg);
+    document.getElementById('devSwitch').checked = currentDevList.includes(cleanPkg);
 
-    execShell(`cmd deviceidle whitelist | grep ${pkg}`)
+    execShell(`cmd deviceidle whitelist | grep ${cleanPkg}`)
         .then(res => {
-            document.getElementById('whitelistSwitch').checked = res.includes(pkg);
+            document.getElementById('whitelistSwitch').checked = res.includes(cleanPkg);
         })
         .catch(() => {
             document.getElementById('whitelistSwitch').checked = false;
@@ -346,13 +348,16 @@ async function startAppScan() {
 
     try {
         const raw = await execShell("pm list packages -3").catch(() => "");
+        
         let rawList = [];
         
         if (raw) {
             const lines = raw.split('\n');
             for (const line of lines) {
                 if (line.startsWith('package:')) {
-                    const pkg = line.substring(8).trim();
+                    let pkg = line.substring(8).trim();
+                    pkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+                    
                     if (pkg && pkg.length > 0) {
                         if (!pkg.startsWith("android.") && 
                             !pkg.startsWith("com.android.") && 
@@ -371,8 +376,12 @@ async function startAppScan() {
         allPackages = rawList.slice(0, 500);
         allPackages.sort();
         
-        await loadAppIconsAndLabels(allPackages);
-        renderAppList();
+        if (allPackages.length > 0) {
+            await loadAppIconsAndLabels(allPackages);
+            renderAppList();
+        } else {
+            container.innerHTML = '<div class="empty-state">No apps found. Check Shizuku permission.</div>';
+        }
     } catch (e) {
         container.innerHTML = '<div class="empty-state">Failed to load apps</div>';
     } finally {
@@ -385,7 +394,11 @@ function renderAppList(filter = '') {
     const countInfo = document.getElementById('app-count-info');
     const filterLower = filter.toLowerCase();
 
-    const filtered = allPackages.filter(pkg =>
+    const cleanPackages = allPackages.map(pkg => 
+        pkg.replace(/\\n/g, '').replace(/package:/g, '').trim()
+    );
+
+    const filtered = cleanPackages.filter(pkg =>
         pkg.toLowerCase().includes(filterLower) ||
         (infoCache[pkg]?.label || '').toLowerCase().includes(filterLower)
     );
@@ -695,13 +708,16 @@ async function startOpapsScan() {
 
     try {
         const raw = await execShell("pm list packages -3").catch(() => "");
+        
         let rawList = [];
         
         if (raw) {
             const lines = raw.split('\n');
             for (const line of lines) {
                 if (line.startsWith('package:')) {
-                    const pkg = line.substring(8).trim();
+                    let pkg = line.substring(8).trim();
+                    pkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+                    
                     if (pkg && pkg.length > 0) {
                         if (!pkg.startsWith("android.") && 
                             !pkg.startsWith("com.android.") && 
@@ -718,11 +734,16 @@ async function startOpapsScan() {
 
         opapsPackages = rawList.slice(0, 200);
         opapsPackages.sort();
-        await loadAppIconsAndLabels(opapsPackages);
-
-        document.getElementById('opapsInitState').style.display = 'none';
-        document.getElementById('opapsSearch').classList.add('show');
-        renderOpapsList();
+        
+        if (opapsPackages.length > 0) {
+            await loadAppIconsAndLabels(opapsPackages);
+            document.getElementById('opapsInitState').style.display = 'none';
+            document.getElementById('opapsSearch').classList.add('show');
+            renderOpapsList();
+        } else {
+            document.getElementById('opapsInitState').innerHTML = 
+                '<div class="empty-state">No user apps found. Check Shizuku.</div>';
+        }
     } catch (e) {
         alert("Failed to scan apps: " + e);
     } finally {
@@ -787,8 +808,9 @@ const debouncedOpapsFilter = debounce((val) => {
 }, 300);
 
 function executeOpapsForApp(pkg) {
-    selectedOpapsPkg = pkg;
-    document.getElementById('opapsTargetPkg').innerText = pkg;
+    const cleanPkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+    selectedOpapsPkg = cleanPkg;
+    document.getElementById('opapsTargetPkg').innerText = cleanPkg;
     document.getElementById('opapsConfirmModal').classList.add('show');
 }
 

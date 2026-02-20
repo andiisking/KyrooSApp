@@ -33,9 +33,6 @@ Intelligently identifies and removes junk files, cache, and temporary data witho
 
 1. Prerequisite: Ensure you have Shizuku installed and running on your device.
 2. Setup: Open KyrooS and grant the necessary permissions via Shizuku when prompted.
-3. Choose Profile: Select your preferred optimization profile (Eco, Balanced, or Performance).
-4. Automate: Enable background services to let KyrooS manage your device automatically.
-5. Fine-tune: Use advanced settings to customize per-app behavior and system parameters.
 
 ---
 
