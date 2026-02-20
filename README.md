@@ -92,7 +92,7 @@ RikkaApps - Shizuku API (https://github.com/RikkaApps/Shizuku)
 
 [![Telegram Personal](https://img.shields.io/badge/Telegram-Personal-0088cc?style=flat-square&logo=telegram)](https://t.me/koneko_dev) [![Telegram Channel](https://img.shields.io/badge/Telegram-Channel-0088cc?style=flat-square&logo=telegram)](https://t.me/Droid_ch)
 ---
-[![Download](https://img.shields.io/badge/Download-File_APK-brightgreen?style=for-the-badge&logo=download)](https://sfl.gl/KhqWYWJZ)
+[![Download](https://img.shields.io/badge/Download-File_APK-brightgreen?style=for-the-badge&logo=download)](https://sfl.gl/No7ETyJ)
 
 <div align="center">
   <sub>© 2026 KyrooS Development Team.</sub><br>
