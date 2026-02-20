@@ -12,6 +12,11 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Credits:
+ * This app uses Shizuku API (https://github.com/RikkaApps/Shizuku)
+ * by RikkaApps. Licensed under custom terms (Apache-2.0 with additional
+ * redistribution restrictions).
  */
 package com.kyroos.app
 
@@ -150,7 +155,6 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
             cacheMode = WebSettings.LOAD_DEFAULT
-            setAppCacheEnabled(false)
             setSupportZoom(false)
             builtInZoomControls = false
             displayZoomControls = false
