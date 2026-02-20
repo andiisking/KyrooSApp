@@ -32,10 +32,8 @@ jobs:
 
       - name: Generate Gradle Wrapper
         run: |
-          echo "🔄 Generating Gradle wrapper..."
           gradle wrapper --gradle-version 8.4
           chmod +x gradlew
-          ls -la gradlew  # Cek apakah sudah ada
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
@@ -46,41 +44,15 @@ jobs:
           name: KyrooS-Debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Build Release APK
+      - name: Build Release APK (Unsigned)
         run: ./gradlew assembleRelease
 
-      - name: Sign Release APK with Debug Key
+      - name: Rename Unsigned APK
         run: |
-          if [ ! -f ~/.android/debug.keystore ]; then
-            mkdir -p ~/.android
-            keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
-          fi
-          
-          apksigner sign --ks ~/.android/debug.keystore \
-            --ks-key-alias androiddebugkey \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            app/build/outputs/apk/release/app-release-unsigned.apk
+          mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/KyrooS-Release-unsigned.apk
 
-      - name: Rename Signed APK
-        run: |
-          mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/KyrooS-Release-Signed.apk
-
-      - name: Upload Signed Release APK
+      - name: Upload Unsigned Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: KyrooS-Release-Signed
-          path: app/build/outputs/apk/release/KyrooS-Release-Signed.apk
-
-      - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
-        with:
-          name: KyrooS ${{ github.ref_name }}
-          tag_name: ${{ github.ref }}
-          files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/KyrooS-Release-Signed.apk
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: KyrooS-Release-Unsigned
+          path: app/build/outputs/apk/release/KyrooS-Release-unsigned.apk
