@@ -22,10 +22,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Generate Gradle Wrapper (Version 8.4)
-        run: |
-          gradle wrapper --gradle-version 8.4 --distribution-type bin
-          chmod +x gradlew
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
@@ -39,7 +37,7 @@ jobs:
       - name: Build Release APK (Unsigned)
         run: ./gradlew assembleRelease
 
-      - name: Install Android SDK Build Tools (for apksigner)
+      - name: Install Android SDK Build Tools
         run: |
           sdkmanager "build-tools;34.0.0"
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
