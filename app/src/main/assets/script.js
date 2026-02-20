@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -352,11 +352,12 @@ async function startAppScan() {
         let rawList = [];
         
         if (raw) {
-            const lines = raw.split('\n');
+            const lines = raw.split(/\\n|\r\n|\n/);
             for (const line of lines) {
-                if (line.startsWith('package:')) {
-                    let pkg = line.substring(8).trim();
-                    pkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+                const cleanLine = line.trim();
+                if (cleanLine.startsWith('package:')) {
+                    let pkg = cleanLine.substring(8).trim();
+                    pkg = pkg.replace(/package:/g, '').trim();
                     
                     if (pkg && pkg.length > 0 && pkg.includes('.')) {
                         if (!pkg.startsWith("android.") && 
@@ -708,11 +709,12 @@ async function startOpapsScan() {
         let rawList = [];
         
         if (raw) {
-            const lines = raw.split('\n');
+            const lines = raw.split(/\\n|\r\n|\n/);
             for (const line of lines) {
-                if (line.startsWith('package:')) {
-                    let pkg = line.substring(8).trim();
-                    pkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+                const cleanLine = line.trim();
+                if (cleanLine.startsWith('package:')) {
+                    let pkg = cleanLine.substring(8).trim();
+                    pkg = pkg.replace(/package:/g, '').trim();
                     
                     if (pkg && pkg.length > 0 && pkg.includes('.')) {
                         rawList.push(pkg);
