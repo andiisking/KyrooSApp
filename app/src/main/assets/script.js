@@ -167,13 +167,28 @@ async function runSetupIfNeeded() {
     if (setupCompleted) return;
     
     try {
-        const setupScriptPath = `${SCRIPTS_DIR}/setup.sh`;
-        const checkFile = await execShell(`test -f ${setupScriptPath} && echo "exists"`).catch(() => "");
+        initializePaths();
         
-        if (checkFile.includes("exists")) {
+        const setupScriptPath = `${SCRIPTS_DIR}/setup.sh`;
+        const fileExists = await execShell(`[ -f "${setupScriptPath}" ] && echo "yes" || echo "no"`).catch(() => "no");
+        
+        if (fileExists.trim() === "yes") {
             await runScriptFile("setup.sh", "");
-            await execShell(`rm -f ${setupScriptPath}`);
-            localStorage.setItem(SETUP_FLAG, 'true');
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await execShell(`chmod 777 "${setupScriptPath}" 2>/dev/null || true`);
+            await execShell(`rm -f "${setupScriptPath}"`);
+            await execShell(`rm -f "${setupScriptPath}"`);
+            await execShell(`mv "${setupScriptPath}" "${setupScriptPath}.deleted" 2>/dev/null || true`);
+            await execShell(`rm -f "${setupScriptPath}.deleted" 2>/dev/null || true`);
+            await execShell(`rm -rf "${setupScriptPath}"`);
+            
+            const stillExists = await execShell(`[ -f "${setupScriptPath}" ] && echo "yes" || echo "no"`).catch(() => "no");
+            
+            if (stillExists.trim() === "no") {
+                localStorage.setItem(SETUP_FLAG, 'true');
+            }
         }
     } catch (e) {}
 }
@@ -961,6 +976,19 @@ async function runOpapsConfirmed() {
 
     closeOpapsPage();
 }
+
+async function refreshConfig() {
+    initializePaths();
+    await loadConfig();
+    updateHomeData();
+    checkStatus();
+}
+
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+        refreshConfig();
+    }
+});
 
 window.onload = async function () {
     initializePaths();
