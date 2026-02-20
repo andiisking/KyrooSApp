@@ -1,5 +1,21 @@
+/*
+ * Copyright 2024 andiisking (KyrooS)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 let CONFIG_PATH = "";
 let SCRIPTS_DIR = "";
+let SETUP_FLAG = "setup_completed";
 
 function initializePaths() {
     if (typeof KyroosApp !== 'undefined' && KyroosApp) {
@@ -9,6 +25,22 @@ function initializePaths() {
         SCRIPTS_DIR = "";
         CONFIG_PATH = "";
     }
+}
+
+async function runSetupIfNeeded() {
+    const setupCompleted = localStorage.getItem(SETUP_FLAG) === 'true';
+    if (setupCompleted) return;
+    
+    try {
+        const setupScriptPath = `${SCRIPTS_DIR}/setup.sh`;
+        const checkFile = await execShell(`test -f ${setupScriptPath} && echo "exists"`).catch(() => "");
+        
+        if (checkFile.includes("exists")) {
+            await runScriptFile("setup.sh", "");
+            await execShell(`rm -f ${setupScriptPath}`);
+            localStorage.setItem(SETUP_FLAG, 'true');
+        }
+    } catch (e) {}
 }
 
 function safeJSONParse(str) { 
@@ -179,21 +211,78 @@ let currentDetailPkg = "";
 let currentAngleList = [];
 let currentGameList = [];
 let currentDevList = [];
+let isPreloading = false;
+let preloadTimer;
 
 async function loadAppIconsAndLabels(pkgs) {
-    const promises = pkgs.map(async pkg => {
-        if (!infoCache[pkg]) infoCache[pkg] = {};
+    const startTime = Date.now();
+    const batchSize = 50;
+    
+    try {
+        if (typeof KyroosApp.getAppInfoBatch === 'function') {
+            for (let i = 0; i < pkgs.length; i += batchSize) {
+                const batch = pkgs.slice(i, i + batchSize);
+                const batchResult = await KyroosApp.getAppInfoBatch(batch);
+                const batchData = JSON.parse(batchResult);
+                
+                Object.keys(batchData).forEach(pkg => {
+                    if (!infoCache[pkg]) infoCache[pkg] = {};
+                    infoCache[pkg].label = batchData[pkg].label;
+                    if (batchData[pkg].icon) {
+                        infoCache[pkg].icon = batchData[pkg].icon;
+                    }
+                });
+                
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+        } else {
+            const promises = pkgs.map(async pkg => {
+                if (!infoCache[pkg]) infoCache[pkg] = {};
+                
+                const iconBase64 = KyroosApp.getAppIconBase64(pkg);
+                if (iconBase64) {
+                    infoCache[pkg].icon = iconBase64;
+                }
+                
+                const label = KyroosApp.getAppLabel(pkg);
+                infoCache[pkg].label = label;
+            });
+            
+            await Promise.all(promises);
+        }
+    } catch (e) {
+        console.log("Batch load failed, using fallback", e);
+        const promises = pkgs.map(async pkg => {
+            if (!infoCache[pkg]) infoCache[pkg] = {};
+            
+            const iconBase64 = KyroosApp.getAppIconBase64(pkg);
+            if (iconBase64) {
+                infoCache[pkg].icon = iconBase64;
+            }
+            
+            const label = KyroosApp.getAppLabel(pkg);
+            infoCache[pkg].label = label;
+        });
         
-        const iconBase64 = KyroosApp.getAppIconBase64(pkg);
-        if (iconBase64) {
-            infoCache[pkg].icon = iconBase64;
+        await Promise.all(promises);
+    }
+}
+
+function handleAppScroll() {
+    clearTimeout(preloadTimer);
+    preloadTimer = setTimeout(() => {
+        const visibleCards = document.querySelectorAll('.app-card-item');
+        const visiblePkgs = [];
+        
+        for (let i = 0; i < Math.min(20, visibleCards.length); i++) {
+            const pkgEl = visibleCards[i]?.querySelector('.app-card-pkg');
+            if (pkgEl) visiblePkgs.push(pkgEl.textContent);
         }
         
-        const label = KyroosApp.getAppLabel(pkg);
-        infoCache[pkg].label = label;
-    });
-    
-    await Promise.all(promises);
+        if (visiblePkgs.length > 0 && typeof KyroosApp.preloadIcons === 'function') {
+            KyroosApp.preloadIcons(visiblePkgs);
+        }
+    }, 200);
 }
 
 function openAppDetail(pkg) {
@@ -203,11 +292,13 @@ function openAppDetail(pkg) {
     document.getElementById('detailAppPkg').innerText = pkg;
 
     const iconBase64 = cache.icon || '';
-    const detailIcon = document.getElementById('detailAppIcon');
-    if (iconBase64 && detailIcon) {
-        detailIcon.innerHTML = `<img src="${iconBase64}" class="app-icon-image">`;
-    } else {
-        detailIcon.innerHTML = '<i class="fas fa-android"></i>';
+    const detailIconBox = document.querySelector('.app-detail-hero .detail-icon-box');
+    if (detailIconBox) {
+        if (iconBase64) {
+            detailIconBox.innerHTML = `<img src="${iconBase64}" class="app-icon-image" style="width:100%; height:100%; object-fit:cover; border-radius:24px;">`;
+        } else {
+            detailIconBox.innerHTML = '<i class="fas fa-android"></i>';
+        }
     }
 
     document.getElementById('angleSwitch').checked = currentAngleList.includes(pkg);
@@ -319,7 +410,18 @@ async function startAppScan() {
             let match;
             while ((match = regex.exec(raw)) !== null) {
                 const pkg = match[1];
-                if (!pkg.startsWith("com.android.overlay") && !pkg.startsWith("com.google.android.overlay")) {
+                if (!pkg.startsWith("android") && 
+                    !pkg.startsWith("com.android") && 
+                    !pkg.startsWith("com.google.android") &&
+                    !pkg.startsWith("com.qualcomm") &&
+                    !pkg.startsWith("com.mediatek") &&
+                    !pkg.startsWith("com.samsung") &&
+                    !pkg.startsWith("com.xiaomi") &&
+                    !pkg.startsWith("com.oppo") &&
+                    !pkg.startsWith("com.vivo") &&
+                    !pkg.startsWith("com.oneplus") &&
+                    !pkg.startsWith("com.google.android.overlay") &&
+                    !pkg.startsWith("com.android.overlay")) {
                     rawList.push(pkg);
                 }
             }
@@ -330,6 +432,8 @@ async function startAppScan() {
         
         await loadAppIconsAndLabels(allPackages);
         renderAppList();
+        
+        window.addEventListener('scroll', handleAppScroll, { passive: true });
     } catch (e) {
         container.innerHTML = '<div class="empty-state">Failed to load apps</div>';
     } finally {
@@ -658,14 +762,22 @@ async function startOpapsScan() {
             const regex = /package:([^\s]+)/g;
             let match;
             while ((match = regex.exec(raw)) !== null) {
-                rawList.push(match[1]);
+                const pkg = match[1];
+                if (!pkg.startsWith("android") && 
+                    !pkg.startsWith("com.android") && 
+                    !pkg.startsWith("com.google.android") &&
+                    !pkg.startsWith("com.qualcomm") &&
+                    !pkg.startsWith("com.mediatek") &&
+                    !pkg.startsWith("com.samsung") &&
+                    !pkg.startsWith("com.xiaomi") &&
+                    !pkg.startsWith("com.oppo") &&
+                    !pkg.startsWith("com.vivo") &&
+                    !pkg.startsWith("com.oneplus")) {
+                    rawList.push(pkg);
+                }
             }
         } else if (allPackages.length > 0) {
-            rawList = allPackages.filter(p => 
-                !p.startsWith("android") && 
-                !p.startsWith("com.android") && 
-                !p.startsWith("com.google.android")
-            );
+            rawList = allPackages;
         }
 
         opapsPackages = cleanList(rawList)
@@ -770,6 +882,8 @@ async function runOpapsConfirmed() {
 
 window.onload = async function () {
     initializePaths();
+    
+    await runSetupIfNeeded();
     
     const appConfigEnabled = localStorage.getItem('advAppConfig') === 'true';
     document.getElementById('appConfigSwitch').checked = appConfigEnabled;

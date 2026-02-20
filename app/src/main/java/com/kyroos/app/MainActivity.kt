@@ -1,19 +1,38 @@
+/*
+ * Copyright 2024 andiisking (KyrooS)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.kyroos.app
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.net.Uri
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.VectorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.util.Base64
+import android.util.LruCache
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -23,11 +42,12 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
-import java.io.BufferedReader
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStreamReader
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
     
@@ -42,8 +62,16 @@ class MainActivity : AppCompatActivity() {
     internal var isStoragePermissionGranted = false
     internal var hasWriteSecureSettings = false
     
-    internal val iconCache = mutableMapOf<String, String>()
-    internal val labelCache = mutableMapOf<String, String>()
+    internal val labelCache = LruCache<String, String>(100)
+    
+    internal val iconCache = object : LruCache<String, String>(5 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: String): Int {
+            return value.length
+        }
+    }
+    
+    private val executor = Executors.newFixedThreadPool(3)
+    private var isPreloading = false
     
     private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_PERMISSION_CODE) {
@@ -73,17 +101,29 @@ class MainActivity : AppCompatActivity() {
         checkWriteSecureSettings()
     }
     
+    override fun onDestroy() {
+        super.onDestroy()
+        executor.shutdown()
+        try {
+            executor.awaitTermination(1, TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+            executor.shutdownNow()
+        }
+    }
+    
     private fun copyAssets() {
-        Thread {
+        executor.execute {
             try {
                 val assetManager = assets
-                val files = assetManager.list("scripts") ?: return@Thread
+                val files = assetManager.list("scripts") ?: return@execute
                 
                 val scriptDir = File(getExternalFilesDir(null), "scripts")
                 if (!scriptDir.exists()) scriptDir.mkdirs()
 
                 for (filename in files) {
                     val outFile = File(scriptDir, filename)
+                    if (outFile.exists() && outFile.length() > 0) continue
+                    
                     val inStream = assetManager.open("scripts/$filename")
                     val outStream = FileOutputStream(outFile)
                     inStream.copyTo(outStream)
@@ -97,7 +137,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 executeCommand(arrayOf("chmod", "-R", "777", scriptDir.absolutePath))
             } catch (e: Exception) { }
-        }.start()
+        }
     }
 
     private fun setupWebView() {
@@ -110,13 +150,52 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             useWideViewPort = true
             cacheMode = WebSettings.LOAD_DEFAULT
+            setAppCacheEnabled(false)
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                safeBrowsingEnabled = false
+            }
         }
         
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val url = request.url.toString()
+                
+                if (url.startsWith("app-icon://")) {
+                    val packageName = url.substringAfter("app-icon://")
+                    return getIconWebResource(packageName)
+                }
+                return super.shouldInterceptRequest(view, request)
+            }
+            
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                startPreloading()
+            }
+        }
+        
         webView.webChromeClient = WebChromeClient()
         webView.addJavascriptInterface(KyroosShellInterface(this), "KyroosApp")
         
         webView.loadUrl("file:///android_asset/index.html")
+    }
+    
+    private fun getIconWebResource(packageName: String): WebResourceResponse? {
+        return try {
+            val base64 = getAppIconBase64(packageName)
+            if (base64.isNotEmpty()) {
+                val base64Data = base64.substringAfter(",")
+                val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                val inputStream = ByteArrayInputStream(imageBytes)
+                WebResourceResponse("image/webp", "UTF-8", inputStream)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
     
     private fun createShizukuProcess(cmdArray: Array<String>): Process {
@@ -149,7 +228,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun grantSelfWriteSecureSettings() {
-        Thread {
+        executor.execute {
             try {
                 val process = createShizukuProcess(
                     arrayOf("pm", "grant", packageName, "android.permission.WRITE_SECURE_SETTINGS")
@@ -157,7 +236,7 @@ class MainActivity : AppCompatActivity() {
                 process.waitFor()
                 checkWriteSecureSettings()
             } catch (e: Exception) { }
-        }.start()
+        }
     }
     
     private fun checkPermissions() {
@@ -184,11 +263,14 @@ class MainActivity : AppCompatActivity() {
     }
     
     fun executeShell(command: String, callbackId: String) {
-        Thread {
+        executor.execute {
             try {
                 val result = executeCommand(arrayOf("sh", "-c", command))
                 runOnUiThread {
-                    val escaped = result.replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r")
+                    val escaped = result.replace("'", "\\'")
+                        .replace("\n", "\\n")
+                        .replace("\r", "\\r")
+                        .replace("\\", "\\\\")
                     webView.evaluateJavascript("window.shellCallback('$callbackId', '$escaped', false)", null)
                 }
             } catch (e: Exception) {
@@ -196,7 +278,7 @@ class MainActivity : AppCompatActivity() {
                     webView.evaluateJavascript("window.shellCallback('$callbackId', 'Error: ${e.message}', true)", null)
                 }
             }
-        }.start()
+        }
     }
 
     private fun executeCommand(cmdArray: Array<String>): String {
@@ -207,7 +289,9 @@ class MainActivity : AppCompatActivity() {
             val error = process.errorStream.bufferedReader().readText()
             process.waitFor()
             if (output.isNotEmpty()) output.trim() else error.trim()
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: Exception) { 
+            "Error: ${e.message}" 
+        }
     }
     
     fun executeShellSync(command: String): String = executeCommand(arrayOf("sh", "-c", command))
@@ -217,33 +301,6 @@ class MainActivity : AppCompatActivity() {
     
     fun requestShizukuPermission() {
         if (isShizukuAvailable) Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
-    }
-    
-    fun getAppIcon(packageName: String): Bitmap? {
-        return try {
-            val packageManager = packageManager
-            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
-            val drawable = applicationInfo.loadIcon(packageManager)
-            
-            val bitmap = Bitmap.createBitmap(
-                drawable.intrinsicWidth, 
-                drawable.intrinsicHeight, 
-                Bitmap.Config.ARGB_8888
-            )
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            bitmap
-        } catch (e: PackageManager.NameNotFoundException) {
-            null
-        }
-    }
-    
-    fun bitmapToBase64(bitmap: Bitmap): String {
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-        val byteArray = stream.toByteArray()
-        return Base64.encodeToString(byteArray, Base64.DEFAULT)
     }
     
     fun getAppLabel(packageName: String): String {
@@ -256,8 +313,120 @@ class MainActivity : AppCompatActivity() {
             packageName.split('.').lastOrNull() ?: packageName
         }
         
-        labelCache[packageName] = label
+        labelCache.put(packageName, label)
         return label
+    }
+    
+    fun getAppIconBase64(packageName: String): String {
+        iconCache[packageName]?.let { return it }
+
+        val base64 = try {
+            val packageManager = packageManager
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val drawable = appInfo.loadIcon(packageManager)
+
+            val bitmap = drawableToBitmap(drawable, 64)
+
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.WEBP, 75, stream)
+            
+            val byteArray = stream.toByteArray()
+            val base64String = "data:image/webp;base64," + 
+                Base64.encodeToString(byteArray, Base64.NO_WRAP)
+            
+            bitmap.recycle()
+            
+            base64String
+        } catch (e: Exception) {
+            ""
+        }
+
+        if (base64.isNotEmpty()) {
+            iconCache.put(packageName, base64)
+        }
+        
+        return base64
+    }
+    
+    private fun drawableToBitmap(drawable: Drawable, size: Int = 64): Bitmap {
+        return when (drawable) {
+            is BitmapDrawable -> {
+                val original = drawable.bitmap
+                if (original.width > size || original.height > size) {
+                    Bitmap.createScaledBitmap(original, size, size, true)
+                } else {
+                    original
+                }
+            }
+            is VectorDrawable -> {
+                val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                drawable.draw(canvas)
+                bitmap
+            }
+            else -> {
+                val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                drawable.setBounds(0, 0, canvas.width, canvas.height)
+                drawable.draw(canvas)
+                bitmap
+            }
+        }
+    }
+    
+    @JavascriptInterface
+    fun getAppIconsBatch(packages: Array<String>): String {
+        val json = JSONObject()
+        
+        packages.forEach { pkg ->
+            var icon = iconCache[pkg]
+            
+            if (icon == null) {
+                icon = getAppIconBase64(pkg)
+            }
+            
+            json.put(pkg, icon ?: "")
+        }
+        
+        return json.toString()
+    }
+    
+    @JavascriptInterface
+    fun getAppInfoBatch(packages: Array<String>): String {
+        val json = JSONObject()
+        
+        packages.forEach { pkg ->
+            val info = JSONObject()
+            info.put("label", getAppLabel(pkg))
+            info.put("icon", iconCache[pkg] ?: getAppIconBase64(pkg))
+            json.put(pkg, info)
+        }
+        
+        return json.toString()
+    }
+    
+    private fun startPreloading() {
+        if (isPreloading) return
+        isPreloading = true
+        
+        webView.evaluateJavascript("Array.from(document.querySelectorAll('.app-card-pkg')).map(el => el.textContent)", null)
+    }
+    
+    @JavascriptInterface
+    fun preloadIcons(packages: Array<String>) {
+        executor.execute {
+            packages.take(30).forEach { pkg ->
+                if (iconCache[pkg] == null) {
+                    getAppIconBase64(pkg)
+                }
+            }
+        }
+    }
+    
+    fun trimCache() {
+        if (iconCache.size() > 50) {
+        }
     }
     
     fun getAppLabelsBatch(packages: Array<String>): String {
@@ -279,30 +448,33 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface fun getShizukuStatus(): String = activity.getShizukuStatus()
     @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
     
-    @JavascriptInterface 
-    fun getAppIconBase64(pkg: String): String {
-        if (activity.iconCache.containsKey(pkg)) {
-            return activity.iconCache[pkg] ?: ""
-        }
-        
-        val bitmap = activity.getAppIcon(pkg)
-        val base64 = if (bitmap != null) {
-            "data:image/png;base64," + activity.bitmapToBase64(bitmap)
-        } else {
-            ""
-        }
-        
-        activity.iconCache[pkg] = base64
-        return base64
-    }
-    
     @JavascriptInterface
     fun getAppLabel(pkg: String): String {
         return activity.getAppLabel(pkg)
     }
     
     @JavascriptInterface
+    fun getAppIconBase64(pkg: String): String {
+        return activity.getAppIconBase64(pkg)
+    }
+    
+    @JavascriptInterface
+    fun getAppIconsBatch(packages: Array<String>): String {
+        return activity.getAppIconsBatch(packages)
+    }
+    
+    @JavascriptInterface
+    fun getAppInfoBatch(packages: Array<String>): String {
+        return activity.getAppInfoBatch(packages)
+    }
+    
+    @JavascriptInterface
     fun getAppLabelsBatch(packages: Array<String>): String {
         return activity.getAppLabelsBatch(packages)
+    }
+    
+    @JavascriptInterface
+    fun preloadIcons(packages: Array<String>) {
+        activity.preloadIcons(packages)
     }
 }
