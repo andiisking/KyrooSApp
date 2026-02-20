@@ -25,12 +25,10 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Generate wrapper if needed
+      - name: Generate Gradle Wrapper
         run: |
-          if [ ! -f "gradlew" ]; then
-            gradle wrapper
-            chmod +x gradlew
-          fi
+          gradle wrapper --gradle-version 8.4
+          chmod +x gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
@@ -41,13 +39,23 @@ jobs:
           name: KyrooS-Debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Build Release APK
+      - name: Build Release APK (Unsigned)
         run: ./gradlew assembleRelease
+
+      - name: Install Android SDK Build Tools
+        run: |
+          sdkmanager "build-tools;34.0.0"
+          echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
 
       - name: Sign Release APK with Debug Key
         run: |
-          # Debug keystore sudah ada di system
+          if [ ! -f ~/.android/debug.keystore ]; then
+            mkdir -p ~/.android
+            keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
+          fi
+          
           apksigner sign --ks ~/.android/debug.keystore \
+            --ks-key-alias androiddebugkey \
             --ks-pass pass:android \
             --key-pass pass:android \
             app/build/outputs/apk/release/app-release-unsigned.apk
