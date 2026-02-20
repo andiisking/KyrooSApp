@@ -24,8 +24,6 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.4'
 
       - name: Generate wrapper if needed
         run: |
@@ -37,8 +35,42 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug
         
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: KyrooS-Debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      - name: Sign Release APK with Debug Key
+        run: |
+          # Debug keystore sudah ada di system
+          apksigner sign --ks ~/.android/debug.keystore \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Rename Signed APK
+        run: |
+          mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/KyrooS-Release-Signed.apk
+
+      - name: Upload Signed Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: KyrooS-Release-Signed
+          path: app/build/outputs/apk/release/KyrooS-Release-Signed.apk
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          name: KyrooS ${{ github.ref_name }}
+          tag_name: ${{ github.ref }}
+          files: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/KyrooS-Release-Signed.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -358,7 +358,7 @@ async function startAppScan() {
                     let pkg = line.substring(8).trim();
                     pkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
                     
-                    if (pkg && pkg.length > 0) {
+                    if (pkg && pkg.length > 0 && pkg.includes('.')) {
                         if (!pkg.startsWith("android.") && 
                             !pkg.startsWith("com.android.") && 
                             !pkg.startsWith("com.google.android.") &&
@@ -373,7 +373,7 @@ async function startAppScan() {
             }
         }
 
-        allPackages = rawList.slice(0, 500);
+        allPackages = [...new Set(rawList)].slice(0, 500);
         allPackages.sort();
         
         if (allPackages.length > 0) {
@@ -394,11 +394,7 @@ function renderAppList(filter = '') {
     const countInfo = document.getElementById('app-count-info');
     const filterLower = filter.toLowerCase();
 
-    const cleanPackages = allPackages.map(pkg => 
-        pkg.replace(/\\n/g, '').replace(/package:/g, '').trim()
-    );
-
-    const filtered = cleanPackages.filter(pkg =>
+    const filtered = allPackages.filter(pkg =>
         pkg.toLowerCase().includes(filterLower) ||
         (infoCache[pkg]?.label || '').toLowerCase().includes(filterLower)
     );
@@ -718,21 +714,14 @@ async function startOpapsScan() {
                     let pkg = line.substring(8).trim();
                     pkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
                     
-                    if (pkg && pkg.length > 0) {
-                        if (!pkg.startsWith("android.") && 
-                            !pkg.startsWith("com.android.") && 
-                            !pkg.startsWith("com.google.android.") &&
-                            !pkg.startsWith("com.qualcomm.") &&
-                            !pkg.startsWith("com.mediatek.") &&
-                            !pkg.startsWith("com.vivo.")) {
-                            rawList.push(pkg);
-                        }
+                    if (pkg && pkg.length > 0 && pkg.includes('.')) {
+                        rawList.push(pkg);
                     }
                 }
             }
         }
 
-        opapsPackages = rawList.slice(0, 200);
+        opapsPackages = [...new Set(rawList)].slice(0, 200);
         opapsPackages.sort();
         
         if (opapsPackages.length > 0) {
@@ -771,10 +760,9 @@ function renderOpapsList(filter = '') {
         return;
     }
 
-    const renderLimit = filter === '' ? 50 : filtered.length;
     const fragment = document.createDocumentFragment();
 
-    filtered.slice(0, renderLimit).forEach(pkg => {
+    filtered.slice(0, 50).forEach(pkg => {
         const cached = infoCache[pkg];
         const label = cached?.label || pkg;
         const iconBase64 = cached?.icon || '';
