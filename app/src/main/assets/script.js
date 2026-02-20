@@ -345,27 +345,25 @@ async function startAppScan() {
     container.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading list...</div>';
 
     try {
-        const raw = await execShell("cmd package list packages -u").catch(() => "");
+        const raw = await execShell("pm list packages -3").catch(() => "");
         let rawList = [];
         
-        if (raw && raw.includes("package:")) {
-            const regex = /package:([^\s]+)/g;
-            let match;
-            while ((match = regex.exec(raw)) !== null) {
-                const pkg = match[1];
-                if (!pkg.startsWith("android") && 
-                    !pkg.startsWith("com.android") && 
-                    !pkg.startsWith("com.google.android") &&
-                    !pkg.startsWith("com.qualcomm") &&
-                    !pkg.startsWith("com.mediatek") &&
-                    !pkg.startsWith("com.samsung") &&
-                    !pkg.startsWith("com.xiaomi") &&
-                    !pkg.startsWith("com.oppo") &&
-                    !pkg.startsWith("com.vivo") &&
-                    !pkg.startsWith("com.oneplus") &&
-                    !pkg.startsWith("com.google.android.overlay") &&
-                    !pkg.startsWith("com.android.overlay")) {
-                    rawList.push(pkg);
+        if (raw) {
+            const lines = raw.split('\n');
+            for (const line of lines) {
+                if (line.startsWith('package:')) {
+                    const pkg = line.substring(8).trim();
+                    if (pkg && pkg.length > 0) {
+                        if (!pkg.startsWith("android.") && 
+                            !pkg.startsWith("com.android.") && 
+                            !pkg.startsWith("com.google.android.") &&
+                            !pkg.startsWith("com.qualcomm.") &&
+                            !pkg.startsWith("com.mediatek.") &&
+                            !pkg.startsWith("com.vivo.") &&
+                            !pkg.includes("overlay")) {
+                            rawList.push(pkg);
+                        }
+                    }
                 }
             }
         }
@@ -696,35 +694,29 @@ async function startOpapsScan() {
     btn.disabled = true;
 
     try {
-        const raw = await execShell("cmd package list packages -3 -u").catch(() => "");
+        const raw = await execShell("pm list packages -3").catch(() => "");
         let rawList = [];
         
-        if (raw && raw.includes("package:")) {
-            const regex = /package:([^\s]+)/g;
-            let match;
-            while ((match = regex.exec(raw)) !== null) {
-                const pkg = match[1];
-                if (!pkg.startsWith("android") && 
-                    !pkg.startsWith("com.android") && 
-                    !pkg.startsWith("com.google.android") &&
-                    !pkg.startsWith("com.qualcomm") &&
-                    !pkg.startsWith("com.mediatek") &&
-                    !pkg.startsWith("com.samsung") &&
-                    !pkg.startsWith("com.xiaomi") &&
-                    !pkg.startsWith("com.oppo") &&
-                    !pkg.startsWith("com.vivo") &&
-                    !pkg.startsWith("com.oneplus")) {
-                    rawList.push(pkg);
+        if (raw) {
+            const lines = raw.split('\n');
+            for (const line of lines) {
+                if (line.startsWith('package:')) {
+                    const pkg = line.substring(8).trim();
+                    if (pkg && pkg.length > 0) {
+                        if (!pkg.startsWith("android.") && 
+                            !pkg.startsWith("com.android.") && 
+                            !pkg.startsWith("com.google.android.") &&
+                            !pkg.startsWith("com.qualcomm.") &&
+                            !pkg.startsWith("com.mediatek.") &&
+                            !pkg.startsWith("com.vivo.")) {
+                            rawList.push(pkg);
+                        }
+                    }
                 }
             }
-        } else if (allPackages.length > 0) {
-            rawList = allPackages;
         }
 
-        opapsPackages = cleanList(rawList)
-            .filter(p => !p.startsWith("com.android.overlay") && !p.startsWith("com.google.android.overlay"))
-            .slice(0, 200);
-
+        opapsPackages = rawList.slice(0, 200);
         opapsPackages.sort();
         await loadAppIconsAndLabels(opapsPackages);
 

@@ -84,9 +84,9 @@ Contributions are welcome! Whether it's bug reports, feature suggestions, or cod
 
 👏 Credits
 
-· @Dcx400 (Telegram) - Original Klixr logging tweaks
-· RikkaApps - Shizuku API (https://github.com/RikkaApps/Shizuku)
-· @sipurse (Telegram) - KyrooS Banner
+@Dcx400 (Telegram) - Original Klixr logging tweaks
+RikkaApps - Shizuku API (https://github.com/RikkaApps/Shizuku)
+@sipurse (Telegram) - KyrooS Banner
 
 ---
 📪Connect With Us
