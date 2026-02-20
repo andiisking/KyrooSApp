@@ -362,8 +362,7 @@ async function toggleSigma(el) {
         if (el.checked) {
             await runScriptFile("sigma.sh", ""); 
         } else {
-            await execShell("pkill -f sigma");
-            await execShell("pkill -f sigma");
+            await execShell("pkill -9 -f sigma");
         }
         setTimeout(checkStatus, 500);
     } catch (e) {
