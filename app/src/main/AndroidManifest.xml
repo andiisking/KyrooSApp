@@ -2,18 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Izin Internet untuk WebView -->
     <uses-permission android:name="android.permission.INTERNET" />
     
-    <!-- Izin Storage untuk baca/tulis file -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     
-    <!-- Izin Notifikasi Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
-    <!-- Izin Shizuku -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" tools:ignore="ProtectedPermissions" />
 
@@ -37,7 +33,6 @@
             </intent-filter>
         </activity>
         
-        <!-- Shizuku Provider -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

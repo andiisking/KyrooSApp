@@ -1,13 +1,30 @@
-<!-- Copyright 2024 andiisking, Apache 2.0 License -->
+<!--
+ * Copyright 2024 andiisking
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Credits:
+ * This app uses Font Awesome Icons (https://fontawesome.com)
+ * Licensed under Font Awesome Free License (SIL OFL 1.1 & MIT)
+-->
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Kyroos Module</title>
     
     <link rel="stylesheet" href="css/all.min.css">
-    
     <link rel="stylesheet" href="style.css">
     <script src="script.js"></script>
 </head>
@@ -34,7 +51,7 @@
             <div class="card">
                 <div class="info-item">
                     <div class="info-icon-box"><i class="fas fa-puzzle-piece"></i></div>
-                    <div class="info-content"><h3>Version</h3><p>1.0</p></div>
+                    <div class="info-content"><h3>Version</h3><p>1.0.1</p></div>
                 </div>
                 <div class="info-item">
                     <div class="info-icon-box"><i class="fas fa-microchip"></i></div>
@@ -53,7 +70,7 @@
 
         <section id="apps" class="tab-section">
             <div id="appInitState" class="empty-state">
-                <i class="fas fa-apps" style="font-size: 48px; opacity: 0.5;"></i>
+                <i class="fas fa-th-large" style="font-size: 48px; opacity: 0.5;"></i>
                 <div style="opacity: 0.8; margin-bottom: 8px;">Click scan to load installed apps</div>
                 <button class="btn-scan" onclick="startAppScan()">
                     <i class="fas fa-sync-alt"></i> Scan Apps
@@ -297,7 +314,7 @@
 
     <div id="devModal" class="modal-overlay">
         <div class="modal-box profile-box">
-            <img id="devProfileImg" class="profile-img" src="profile.png">
+            <img id="devProfileImg" class="profile-img" src="profile.png" onerror="this.src='default-avatar.png'">
             
             <h3 style="font-size: 22px; margin-bottom: 2px;">KonekoDev</h3>
             <p style="color: var(--md-outline); font-size: 14px;">Android Module Developer</p>

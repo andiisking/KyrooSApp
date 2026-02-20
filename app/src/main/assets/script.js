@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 andiisking (KyrooS Developer)
+ * Copyright 2024 andiisking
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
  * limitations under the License.
  *
 */
+
 let CONFIG_PATH = "";
 let SCRIPTS_DIR = "";
 let SETUP_FLAG = "setup_completed";
@@ -28,37 +29,53 @@ function initializePaths() {
     }
 }
 
-async function runSetupIfNeeded() {
-    const setupCompleted = localStorage.getItem(SETUP_FLAG) === 'true';
-    if (setupCompleted) return;
-    
-    try {
-        const setupScriptPath = `${SCRIPTS_DIR}/setup.sh`;
-        const checkFile = await execShell(`test -f ${setupScriptPath} && echo "exists"`).catch(() => "");
-        
-        if (checkFile.includes("exists")) {
-            await runScriptFile("setup.sh", "");
-            await execShell(`rm -f ${setupScriptPath}`);
-            localStorage.setItem(SETUP_FLAG, 'true');
-        }
-    } catch (e) {}
+function sanitizePackageName(pkg) {
+    if (!pkg) return '';
+    return pkg.toString()
+        .replace(/[\\\n\r\t]/g, '')
+        .replace(/package:/g, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '')
+        .trim();
 }
 
-function safeJSONParse(str) { 
-    try { return JSON.parse(str); } 
-    catch { return []; } 
+function removeDuplicatesAndClean(packageList) {
+    if (!packageList) return [];
+    
+    const inputArray = Array.isArray(packageList) ? packageList : [packageList];
+    
+    const cleanedItems = inputArray
+        .map(item => {
+            if (!item) return '';
+            return sanitizePackageName(item);
+        })
+        .filter(item => {
+            if (item.length === 0) return false;
+            if (!item.includes('.')) return false;
+            if (item.startsWith('.')) return false;
+            if (item.endsWith('.')) return false;
+            const parts = item.split('.');
+            return parts.every(part => part.length > 0);
+        });
+    
+    const uniqueItems = [...new Set(cleanedItems)];
+    
+    return uniqueItems.sort();
+}
+
+function safeJSONParse(str) {
+    try {
+        return JSON.parse(str);
+    } catch {
+        return [];
+    }
 }
 
 function debounce(func, delay) {
     let timeout;
-    return (...args) => { 
-        clearTimeout(timeout); 
-        timeout = setTimeout(() => func.apply(this, args), delay); 
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), delay);
     };
-}
-
-function cleanList(arr) {
-    return [...new Set(arr)].filter(p => p && p.trim().length > 0);
 }
 
 function escapeHtml(text) {
@@ -143,6 +160,22 @@ function execShellSync(command) {
     } catch (e) {
         return "Error: " + e.message;
     }
+}
+
+async function runSetupIfNeeded() {
+    const setupCompleted = localStorage.getItem(SETUP_FLAG) === 'true';
+    if (setupCompleted) return;
+    
+    try {
+        const setupScriptPath = `${SCRIPTS_DIR}/setup.sh`;
+        const checkFile = await execShell(`test -f ${setupScriptPath} && echo "exists"`).catch(() => "");
+        
+        if (checkFile.includes("exists")) {
+            await runScriptFile("setup.sh", "");
+            await execShell(`rm -f ${setupScriptPath}`);
+            localStorage.setItem(SETUP_FLAG, 'true');
+        }
+    } catch (e) {}
 }
 
 function switchTab(tabId) {
@@ -230,7 +263,7 @@ async function loadAppIconsAndLabels(pkgs) {
 }
 
 function openAppDetail(pkg) {
-    const cleanPkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+    const cleanPkg = sanitizePackageName(pkg);
     currentDetailPkg = cleanPkg;
     const cache = infoCache[cleanPkg] || {};
     document.getElementById('detailAppLabel').innerText = cache.label || cleanPkg;
@@ -374,7 +407,7 @@ async function startAppScan() {
             }
         }
 
-        allPackages = [...new Set(rawList)].slice(0, 500);
+        allPackages = removeDuplicatesAndClean(rawList).slice(0, 500);
         allPackages.sort();
         
         if (allPackages.length > 0) {
@@ -510,7 +543,7 @@ function cancelBrutalAction() {
 }
 
 async function handleDriverToggle(type) {
-    const pkg = currentDetailPkg;
+    const pkg = sanitizePackageName(currentDetailPkg);
     const angleEl = document.getElementById('angleSwitch');
     const gameEl = document.getElementById('gameSwitch');
     const devEl = document.getElementById('devSwitch');
@@ -536,11 +569,15 @@ async function handleDriverToggle(type) {
         currentDevList = currentDevList.filter(p => p !== pkg); 
     }
 
+    currentAngleList = removeDuplicatesAndClean(currentAngleList);
+    currentGameList = removeDuplicatesAndClean(currentGameList);
+    currentDevList = removeDuplicatesAndClean(currentDevList);
+
     await saveKyroosConfig();
 }
 
 async function handleWhitelistToggle(el) {
-    const pkg = currentDetailPkg;
+    const pkg = sanitizePackageName(currentDetailPkg);
     const cmd = el.checked ? `cmd deviceidle whitelist +${pkg}` : `cmd deviceidle whitelist -${pkg}`;
     await execShell(cmd).catch(() => {});
 }
@@ -598,85 +635,185 @@ async function applyCustomSave() {
 async function saveKyroosConfig() {
     try {
         initializePaths();
-        const d = document.getElementById('deepSwitch').checked ? "on" : "off";
-        const p = document.getElementById('powerSwitch').checked ? "on" : "off";
-        const c = document.getElementById('cacheSwitch').checked ? "on" : "off";
-        const b = document.getElementById('brutalSwitch').checked ? "on" : "off";
+        
+        currentAngleList = removeDuplicatesAndClean(currentAngleList);
+        currentGameList = removeDuplicatesAndClean(currentGameList);
+        currentDevList = removeDuplicatesAndClean(currentDevList);
+        
+        const deep = document.getElementById('deepSwitch').checked ? 'on' : 'off';
+        const power = document.getElementById('powerSwitch').checked ? 'on' : 'off';
+        const cache = document.getElementById('cacheSwitch').checked ? 'on' : 'off';
+        const brutal = document.getElementById('brutalSwitch').checked ? 'on' : 'off';
+        
         const isCustomOn = document.getElementById('customSaveSwitch').checked;
-        const customVal = document.getElementById('customSaveValue').value;
-        const finalCustom = (isCustomOn && customVal) ? customVal : "off";
-
-        const angleVal = cleanList(currentAngleList).join(',') || "none";
-        const gameVal = cleanList(currentGameList).join(',') || "none";
-        const devVal = cleanList(currentDevList).join(',') || "none";
-
-        const configContent = [
-            `deep=${d}`,
-            `power=${p}`,
-            `chace=${c}`,
-            `brutal=${b}`,
-            `cossave=${finalCustom}`,
-            `angle=${angleVal}`,
-            `game=${gameVal}`,
-            `dev=${devVal}`
-        ].join('\n');
-
-        await execShell(`echo "${configContent}" > ${CONFIG_PATH}`);
-
+        const customValue = sanitizePackageName(document.getElementById('customSaveValue').value);
+        const finalCustom = (isCustomOn && customValue) ? customValue : 'off';
+        
+        const angleValue = currentAngleList.length > 0 ? currentAngleList.join(',') : 'none';
+        const gameValue = currentGameList.length > 0 ? currentGameList.join(',') : 'none';
+        const devValue = currentDevList.length > 0 ? currentDevList.join(',') : 'none';
+        
+        await execShell(`rm -f ${CONFIG_PATH}`);
+        
+        await execShell(`echo 'deep=${deep}' >> ${CONFIG_PATH}`);
+        await execShell(`echo 'power=${power}' >> ${CONFIG_PATH}`);
+        await execShell(`echo 'chace=${cache}' >> ${CONFIG_PATH}`);
+        await execShell(`echo 'brutal=${brutal}' >> ${CONFIG_PATH}`);
+        await execShell(`echo 'cossave=${finalCustom}' >> ${CONFIG_PATH}`);
+        await execShell(`echo 'angle=${angleValue}' >> ${CONFIG_PATH}`);
+        await execShell(`echo 'game=${gameValue}' >> ${CONFIG_PATH}`);
+        await execShell(`echo 'dev=${devValue}' >> ${CONFIG_PATH}`);
+        
         if (KyroosApp.hasSettingsPermission && KyroosApp.hasSettingsPermission()) {
-            if (angleVal !== "none") {
-                await execShell(`settings put global angle_gl_driver_selection_pkgs "${angleVal}"`);
-                await execShell(`settings put global angle_gl_driver_selection_values "${angleVal.split(',').map(() => 'angle').join(',')}"`);
+            
+            if (currentAngleList.length > 0) {
+                const cleanPkgs = currentAngleList.join(',');
+                const cleanValues = currentAngleList.map(() => 'angle').join(',');
+                
+                await execShell(`settings put global angle_gl_driver_selection_pkgs "${cleanPkgs}"`);
+                await execShell(`settings put global angle_gl_driver_selection_values "${cleanValues}"`);
             } else {
                 await execShell(`settings delete global angle_gl_driver_selection_pkgs`);
                 await execShell(`settings delete global angle_gl_driver_selection_values`);
             }
-
-            if (gameVal !== "none") {
-                await execShell(`settings put global game_driver_opt_in_apps "${gameVal}"`);
+            
+            if (currentGameList.length > 0) {
+                const cleanGamePkgs = currentGameList.join(',');
+                await execShell(`settings put global game_driver_opt_in_apps "${cleanGamePkgs}"`);
             } else {
                 await execShell(`settings delete global game_driver_opt_in_apps`);
             }
-
-            if (devVal !== "none") {
-                await execShell(`settings put global game_driver_prerelease_opt_in_apps "${devVal}"`);
+            
+            if (currentDevList.length > 0) {
+                const cleanDevPkgs = currentDevList.join(',');
+                await execShell(`settings put global game_driver_prerelease_opt_in_apps "${cleanDevPkgs}"`);
             } else {
                 await execShell(`settings delete global game_driver_prerelease_opt_in_apps`);
             }
         }
+        
     } catch (e) {}
 }
 
 async function loadConfig() {
     try {
         initializePaths();
-        const configContent = await execShell(`cat ${CONFIG_PATH}`).catch(() => "");
-        if (configContent && !configContent.includes("No such file") && configContent.length > 0) {
-            document.getElementById('deepSwitch').checked = configContent.includes('deep=on');
-            document.getElementById('powerSwitch').checked = configContent.includes('power=on');
-            document.getElementById('cacheSwitch').checked = configContent.includes('chace=on');
-            document.getElementById('brutalSwitch').checked = configContent.includes('brutal=on');
-
-            const customMatch = configContent.match(/cossave=(\w+)/);
-            if (customMatch && customMatch[1] !== 'off') {
-                document.getElementById('customSaveSwitch').checked = true;
-                document.getElementById('customSaveContainer').classList.add('show');
-                document.getElementById('customSaveValue').value = customMatch[1];
-            } else {
-                document.getElementById('customSaveSwitch').checked = false;
-            }
-
-            const angleMatch = configContent.match(/angle=([^\n]+)/);
-            currentAngleList = angleMatch && angleMatch[1] !== 'none' ? angleMatch[1].split(',') : [];
-
-            const gameMatch = configContent.match(/game=([^\n]+)/);
-            currentGameList = gameMatch && gameMatch[1] !== 'none' ? gameMatch[1].split(',') : [];
-
-            const devMatch = configContent.match(/dev=([^\n]+)/);
-            currentDevList = devMatch && devMatch[1] !== 'none' ? devMatch[1].split(',') : [];
-
-            checkInterlock();
+        
+        const configContent = await execShell(`cat ${CONFIG_PATH} 2>/dev/null || true`).catch(() => '');
+        
+        if (!configContent || configContent.includes('No such file')) {
+            return;
         }
+        
+        const lines = configContent.split('\n').filter(line => line.trim().length > 0);
+        
+        currentAngleList = [];
+        currentGameList = [];
+        currentDevList = [];
+        
+        for (const line of lines) {
+            if (!line.includes('=')) continue;
+            
+            const equalIndex = line.indexOf('=');
+            const key = line.substring(0, equalIndex).trim();
+            const value = line.substring(equalIndex + 1).trim();
+            
+            if (!key || !value) continue;
+            
+            switch(key) {
+                case 'deep':
+                    document.getElementById('deepSwitch').checked = value === 'on';
+                    break;
+                case 'power':
+                    document.getElementById('powerSwitch').checked = value === 'on';
+                    break;
+                case 'chace':
+                    document.getElementById('cacheSwitch').checked = value === 'on';
+                    break;
+                case 'brutal':
+                    document.getElementById('brutalSwitch').checked = value === 'on';
+                    break;
+                case 'cossave':
+                    if (value !== 'off' && value.length > 0) {
+                        document.getElementById('customSaveSwitch').checked = true;
+                        document.getElementById('customSaveContainer').classList.add('show');
+                        document.getElementById('customSaveValue').value = value;
+                    } else {
+                        document.getElementById('customSaveSwitch').checked = false;
+                        document.getElementById('customSaveContainer').classList.remove('show');
+                    }
+                    break;
+                case 'angle':
+                    if (value !== 'none' && value.length > 0) {
+                        currentAngleList = removeDuplicatesAndClean(value.split(','));
+                    }
+                    break;
+                case 'game':
+                    if (value !== 'none' && value.length > 0) {
+                        currentGameList = removeDuplicatesAndClean(value.split(','));
+                    }
+                    break;
+                case 'dev':
+                    if (value !== 'none' && value.length > 0) {
+                        currentDevList = removeDuplicatesAndClean(value.split(','));
+                    }
+                    break;
+            }
+        }
+        
+        currentAngleList = removeDuplicatesAndClean(currentAngleList);
+        currentGameList = removeDuplicatesAndClean(currentGameList);
+        currentDevList = removeDuplicatesAndClean(currentDevList);
+        
+        checkInterlock();
+        
+    } catch (e) {}
+}
+
+async function repairAndRemoveDuplicates() {
+    try {
+        await execShell(`cp ${CONFIG_PATH} ${CONFIG_PATH}.backup.${Date.now()} 2>/dev/null || true`);
+        
+        const anglePkgs = await execShell(`settings get global angle_gl_driver_selection_pkgs 2>/dev/null || echo "none"`).catch(() => 'none');
+        const angleVals = await execShell(`settings get global angle_gl_driver_selection_values 2>/dev/null || echo "none"`).catch(() => 'none');
+        const gamePkgs = await execShell(`settings get global game_driver_opt_in_apps 2>/dev/null || echo "none"`).catch(() => 'none');
+        const devPkgs = await execShell(`settings get global game_driver_prerelease_opt_in_apps 2>/dev/null || echo "none"`).catch(() => 'none');
+        
+        let cleanAngle = [];
+        let cleanGame = [];
+        let cleanDev = [];
+        
+        if (anglePkgs !== 'none') {
+            cleanAngle = removeDuplicatesAndClean(anglePkgs.split(',').filter(p => p && p !== 'none'));
+        }
+        
+        if (gamePkgs !== 'none') {
+            cleanGame = removeDuplicatesAndClean(gamePkgs.split(',').filter(p => p && p !== 'none'));
+        }
+        
+        if (devPkgs !== 'none') {
+            cleanDev = removeDuplicatesAndClean(devPkgs.split(',').filter(p => p && p !== 'none'));
+        }
+        
+        if (cleanAngle.length > 0) {
+            await execShell(`settings put global angle_gl_driver_selection_pkgs "${cleanAngle.join(',')}"`);
+            await execShell(`settings put global angle_gl_driver_selection_values "${cleanAngle.map(() => 'angle').join(',')}"`);
+        }
+        
+        if (cleanGame.length > 0) {
+            await execShell(`settings put global game_driver_opt_in_apps "${cleanGame.join(',')}"`);
+        }
+        
+        if (cleanDev.length > 0) {
+            await execShell(`settings put global game_driver_prerelease_opt_in_apps "${cleanDev.join(',')}"`);
+        }
+        
+        currentAngleList = cleanAngle;
+        currentGameList = cleanGame;
+        currentDevList = cleanDev;
+        
+        await saveKyroosConfig();
+        
     } catch (e) {}
 }
 
@@ -723,7 +860,7 @@ async function startOpapsScan() {
             }
         }
 
-        opapsPackages = [...new Set(rawList)].slice(0, 200);
+        opapsPackages = removeDuplicatesAndClean(rawList).slice(0, 200);
         opapsPackages.sort();
         
         if (opapsPackages.length > 0) {
@@ -798,7 +935,7 @@ const debouncedOpapsFilter = debounce((val) => {
 }, 300);
 
 function executeOpapsForApp(pkg) {
-    const cleanPkg = pkg.replace(/\\n/g, '').replace(/package:/g, '').trim();
+    const cleanPkg = sanitizePackageName(pkg);
     selectedOpapsPkg = cleanPkg;
     document.getElementById('opapsTargetPkg').innerText = cleanPkg;
     document.getElementById('opapsConfirmModal').classList.add('show');
