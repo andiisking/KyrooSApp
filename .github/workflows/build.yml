@@ -27,6 +27,9 @@ jobs:
         with:
           gradle-version: 8.4
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Generate Gradle Wrapper
         run: |
           gradle wrapper --gradle-version 8.4
@@ -44,13 +47,9 @@ jobs:
       - name: Build Release APK (Unsigned)
         run: ./gradlew assembleRelease
 
-      - name: Install Android SDK Build Tools
-        run: |
-          sdkmanager "build-tools;34.0.0"
-          echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
-
       - name: Sign Release APK with Debug Key
         run: |
+          # Android SDK sudah di-setup, jadi apksigner available
           if [ ! -f ~/.android/debug.keystore ]; then
             mkdir -p ~/.android
             keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
