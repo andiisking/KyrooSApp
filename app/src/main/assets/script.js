@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 andiisking (KyrooS)
+ * Copyright 2024 andiisking 
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -211,78 +211,21 @@ let currentDetailPkg = "";
 let currentAngleList = [];
 let currentGameList = [];
 let currentDevList = [];
-let isPreloading = false;
-let preloadTimer;
 
 async function loadAppIconsAndLabels(pkgs) {
-    const startTime = Date.now();
-    const batchSize = 50;
+    const promises = pkgs.map(async pkg => {
+        if (!infoCache[pkg]) infoCache[pkg] = {};
+        
+        const iconBase64 = KyroosApp.getAppIconBase64(pkg);
+        if (iconBase64) {
+            infoCache[pkg].icon = iconBase64;
+        }
+        
+        const label = KyroosApp.getAppLabel(pkg);
+        infoCache[pkg].label = label;
+    });
     
-    try {
-        if (typeof KyroosApp.getAppInfoBatch === 'function') {
-            for (let i = 0; i < pkgs.length; i += batchSize) {
-                const batch = pkgs.slice(i, i + batchSize);
-                const batchResult = await KyroosApp.getAppInfoBatch(batch);
-                const batchData = JSON.parse(batchResult);
-                
-                Object.keys(batchData).forEach(pkg => {
-                    if (!infoCache[pkg]) infoCache[pkg] = {};
-                    infoCache[pkg].label = batchData[pkg].label;
-                    if (batchData[pkg].icon) {
-                        infoCache[pkg].icon = batchData[pkg].icon;
-                    }
-                });
-                
-                await new Promise(resolve => setTimeout(resolve, 10));
-            }
-        } else {
-            const promises = pkgs.map(async pkg => {
-                if (!infoCache[pkg]) infoCache[pkg] = {};
-                
-                const iconBase64 = KyroosApp.getAppIconBase64(pkg);
-                if (iconBase64) {
-                    infoCache[pkg].icon = iconBase64;
-                }
-                
-                const label = KyroosApp.getAppLabel(pkg);
-                infoCache[pkg].label = label;
-            });
-            
-            await Promise.all(promises);
-        }
-    } catch (e) {
-        console.log("Batch load failed, using fallback", e);
-        const promises = pkgs.map(async pkg => {
-            if (!infoCache[pkg]) infoCache[pkg] = {};
-            
-            const iconBase64 = KyroosApp.getAppIconBase64(pkg);
-            if (iconBase64) {
-                infoCache[pkg].icon = iconBase64;
-            }
-            
-            const label = KyroosApp.getAppLabel(pkg);
-            infoCache[pkg].label = label;
-        });
-        
-        await Promise.all(promises);
-    }
-}
-
-function handleAppScroll() {
-    clearTimeout(preloadTimer);
-    preloadTimer = setTimeout(() => {
-        const visibleCards = document.querySelectorAll('.app-card-item');
-        const visiblePkgs = [];
-        
-        for (let i = 0; i < Math.min(20, visibleCards.length); i++) {
-            const pkgEl = visibleCards[i]?.querySelector('.app-card-pkg');
-            if (pkgEl) visiblePkgs.push(pkgEl.textContent);
-        }
-        
-        if (visiblePkgs.length > 0 && typeof KyroosApp.preloadIcons === 'function') {
-            KyroosApp.preloadIcons(visiblePkgs);
-        }
-    }, 200);
+    await Promise.all(promises);
 }
 
 function openAppDetail(pkg) {
@@ -432,8 +375,6 @@ async function startAppScan() {
         
         await loadAppIconsAndLabels(allPackages);
         renderAppList();
-        
-        window.addEventListener('scroll', handleAppScroll, { passive: true });
     } catch (e) {
         container.innerHTML = '<div class="empty-state">Failed to load apps</div>';
     } finally {

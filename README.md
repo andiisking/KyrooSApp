@@ -1,12 +1,5 @@
-KyrooS
-
-<div align="center">
-  <img src="https://raw.githubusercontent.com/yourusername/kyroos/main/assets/icon.png" alt="KyrooS Logo" width="120" height="120">
-
-https://img.shields.io/badge/License-Apache%202.0-blue.svg
-https://img.shields.io/badge/Powered%20by-Shizuku-ff69b4
-
-</div>
+![Banner Project](banner.jpg)
+#KyrooS
 
 KyrooS is a powerful system optimization and power management utility designed to enhance the performance and longevity of your Android device. By leveraging advanced system-level integrations, KyrooS provides users with deep control over background processes, battery consumption, and overall system responsiveness.
 
@@ -30,17 +23,9 @@ Keep your device feeling snappy. Through efficient memory and cache management, 
 
 Built on the robust Shizuku API, KyrooS performs high-level optimizations securely. It offers the depth of traditional system tweaks with a modern, secure approach to permission management.
 
-🎮 Gaming Mode
-
-One-tap optimization for gaming sessions. Disables background processes, maximizes CPU/GPU performance, and minimizes latency for the best gaming experience.
-
 🧹 Storage Cleaner
 
 Intelligently identifies and removes junk files, cache, and temporary data without affecting your personal files or app functionality.
-
-📊 Real-time Monitoring
-
-Live statistics on CPU usage, memory consumption, battery health, and temperature. Stay informed about your device's status at a glance.
 
 ---
 
@@ -91,7 +76,7 @@ Essential Permissions
 
 Contributions are welcome! Whether it's bug reports, feature suggestions, or code contributions, your help makes KyrooS better.
 
-· Report Bugs: Open an issue on GitHub with your device model, Android version, and steps to reproduce.
+· Report Bugs: Open an issue on GitHub with your device model, Android version, and steps to reproduce,
 · Suggest Features: Have an idea? Open a feature request and describe the use case.
 · Submit Code: Fork the repository, make your changes, and submit a pull request.
 
@@ -99,11 +84,15 @@ Contributions are welcome! Whether it's bug reports, feature suggestions, or cod
 
 👏 Credits
 
-· Dcx400 - Original Klixr logging tweaks
+· @Dcx400 (Telegram) - Original Klixr logging tweaks
 · RikkaApps - Shizuku API (https://github.com/RikkaApps/Shizuku)
+· @sipurse (Telegram) - KyrooS Banner
 
 ---
+📪Connect With Us
 
+[![Telegram Personal](https://img.shields.io/badge/Telegram-Personal-0088cc?style=flat-square&logo=telegram)](https://t.me/koneko_dev) [![Telegram Channel](https://img.shields.io/badge/Telegram-Channel-0088cc?style=flat-square&logo=telegram)](https://t.me/Droid_ch)
+---
 📜 License
 
 ```
