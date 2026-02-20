@@ -460,6 +460,17 @@ class KyroosShellInterface(private val activity: MainActivity) {
     @JavascriptInterface fun requestShizukuPermission() = activity.requestShizukuPermission()
     
     @JavascriptInterface
+    fun readKyroosConfig(): String {
+        return try {
+            val file = File(activity.getScriptDir(), "kyroos.conf")
+            if (file.exists()) file.readText() else ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+    
+    
+    @JavascriptInterface
     fun getAppLabel(pkg: String): String {
         return activity.getAppLabel(pkg)
     }

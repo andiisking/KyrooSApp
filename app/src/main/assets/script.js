@@ -176,19 +176,7 @@ async function runSetupIfNeeded() {
             await runScriptFile("setup.sh", "");
             
             await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            await execShell(`chmod 777 "${setupScriptPath}" 2>/dev/null || true`);
-            await execShell(`rm -f "${setupScriptPath}"`);
-            await execShell(`rm -f "${setupScriptPath}"`);
-            await execShell(`mv "${setupScriptPath}" "${setupScriptPath}.deleted" 2>/dev/null || true`);
-            await execShell(`rm -f "${setupScriptPath}.deleted" 2>/dev/null || true`);
-            await execShell(`rm -rf "${setupScriptPath}"`);
-            
-            const stillExists = await execShell(`[ -f "${setupScriptPath}" ] && echo "yes" || echo "no"`).catch(() => "no");
-            
-            if (stillExists.trim() === "no") {
-                localStorage.setItem(SETUP_FLAG, 'true');
-            }
+            localStorage.setItem(SETUP_FLAG, 'true');
         }
     } catch (e) {}
 }
@@ -714,9 +702,14 @@ async function loadConfig() {
     try {
         initializePaths();
         
-        const configContent = await execShell(`cat ${CONFIG_PATH} 2>/dev/null || true`).catch(() => '');
+        let configContent = "";
+        if (typeof KyroosApp !== 'undefined' && KyroosApp.readKyroosConfig) {
+            configContent = KyroosApp.readKyroosConfig();
+        } else {
+            configContent = await execShell(`cat ${CONFIG_PATH} 2>/dev/null || true`).catch(() => '');
+        }
         
-        if (!configContent || configContent.includes('No such file')) {
+        if (!configContent || configContent.includes('No such file') || configContent.trim() === '') {
             return;
         }
         
