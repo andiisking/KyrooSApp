@@ -30,9 +30,10 @@ Intelligently identifies and removes junk files, cache, and temporary data witho
 ---
 
 📖 How to Use
-
-1. Prerequisite: Ensure you have Shizuku installed and running on your device.
-2. Setup: Open KyrooS and grant the necessary permissions via Shizuku when prompted.
+1. Instal KyrooS. 
+2. Prerequisite: Ensure you have Shizuku installed and running on your device.
+3. Setup: Open KyrooS and grant the necessary permissions via Shizuku when prompted.
+4. KyrooS ready to use!. 
 
 ---
 
@@ -55,7 +56,6 @@ Essential Permissions
 · Shizuku: Used for secure, elevated access to perform deep system optimizations.
 · Write Secure Settings: Allows the app to manage advanced system features like power-saving modes.
 · Notifications: Keeps you informed about optimization results and service status.
-· Storage Access: Required solely for managing optimization configurations locally.
 
 ---
 
@@ -64,8 +64,6 @@ Essential Permissions
 · Extended Battery Life: Spend less time at the charger with smarter energy use. Users report up to 30% longer standby time.
 · Improved Performance: Reduce lag and stutter during daily use and gaming. Apps launch faster, multitasking feels smoother.
 · Better Device Health: Minimize unnecessary background strain on your hardware, potentially extending the lifespan of your device.
-· More Free Storage: Automatically clean junk files and optimize storage usage without losing important data.
-· Simple & Effective: A clean, intuitive interface that delivers powerful results without the complexity.
 
 ---
 
@@ -88,11 +86,12 @@ RikkaApps - Shizuku API (https://github.com/RikkaApps/Shizuku)
 @sipurse (Telegram) - KyrooS Banner
 
 ---
-📪Connect With Us
+📪 Connect With Us
 
 [![Telegram Personal](https://img.shields.io/badge/Telegram-Personal-0088cc?style=flat-square&logo=telegram)](https://t.me/koneko_dev) [![Telegram Channel](https://img.shields.io/badge/Telegram-Channel-0088cc?style=flat-square&logo=telegram)](https://t.me/Droid_ch)
 ---
-[![Download](https://img.shields.io/badge/Download-File_APK-brightgreen?style=for-the-badge&logo=download)](https://sfl.gl/No7ETyJ)
+[![Download](https://img.shields.io/badge/Download-File_APK-brightgreen?style=for-the-badge&logo=download)](https://sfl.gl/KhqWYWJZ)
+---
 
 <div align="center">
   <sub>© 2026 KyrooS Development Team.</sub><br>
