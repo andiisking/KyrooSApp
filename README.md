@@ -1,7 +1,7 @@
 ![Banner Project](banner.jpg)
 #KyrooS
 
-KyrooS is a powerful system optimization and power management utility designed to enhance the performance and longevity of your Android device. By leveraging advanced system-level integrations, KyrooS provides users with deep control over background processes, battery consumption, and overall system responsiveness.
+KyrooS is a powerful system optimization and power management utility designed to enhance the performance and longevity of your Not Rooted Android device. By leveraging advanced system-level integrations, KyrooS provides users with deep control over background processes, battery consumption, and overall system responsiveness.
 
 ---
 
