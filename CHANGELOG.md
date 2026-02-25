@@ -2,6 +2,25 @@
 
 All notable changes to KyrooS will be documented in this file.
 
+## [2.0.0] - 2026-02-25
+
+### Added
+- **Complete App Rewrite (Native UI):** Migrated completely from a WebView-based architecture to a 100% Native Android application using Kotlin and Jetpack Compose for superior performance and fluid UX.
+- **Native Kotlin Engine:** System tuning logic is now handled entirely within the app (`Profile.kt`), generating precise shell scripts on the fly.
+- **On-Demand System Profiles:** Introduced dynamically applied profiles (Balanced, Powersave, Gaming, Extreme) adjusting `activity_manager`, `app_standby`, `device_idle`, and `job_scheduler`.
+- **Deep Telemetry Cleaner:** Added a one-time initial setup script that aggressively disables system loggers, media metrics, binder stats, and window manager tracing.
+
+### Changed
+- Config file (`kyroos.conf`) repurposed purely as a UI state memory rather than an active background engine trigger.
+- Developer UI Profile updated with "KyrooS Developer" badge and modern UI enhancements.
+- Notification alerts now show dynamically based on the applied profile.
+
+### Removed
+- Deprecated persistent background binary/engine (Sigma engine is completely removed).
+- Removed `SigmaConfigScreen` and all associated background tracking dependencies.
+
+---
+
 ## [1.0.1] - 2026-02-21
 
 ### Added
