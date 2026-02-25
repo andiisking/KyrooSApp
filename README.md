@@ -75,7 +75,7 @@ Contributions are welcome! Whether it's bug reports, feature suggestions, or cod
 * **@sipurse** (Telegram) - KyrooS Banner
 * **@HoyoSlave** (Telegram) - CMD-Tweak Developer
 * **ValentineSCLAIR** - Tester
-* **RipRoG** - UI Inspiration
+* **@RipRoG** (Telegram) - UI Inspiration
 
 ---
 📪 Connect With Us
