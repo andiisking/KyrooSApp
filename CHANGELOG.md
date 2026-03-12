@@ -2,6 +2,13 @@
 
 All notable changes to KyrooS will be documented in this file.
 
+## [2.3.0] - 2026-03-12
+
+### Added
+- **Fps Monitor**
+- **File Manager** (Beta)
+- **Device Info**
+
 ## [2.1.0] - 2026-02-28
 
 ### Added
