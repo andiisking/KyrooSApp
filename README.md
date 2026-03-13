@@ -82,7 +82,7 @@ Contributions are welcome! Whether it's bug reports, feature suggestions, or cod
 
 [![Telegram Personal](https://img.shields.io/badge/Telegram-Personal-0088cc?style=flat-square&logo=telegram)](https://t.me/koneko_dev) [![Telegram Channel](https://img.shields.io/badge/Telegram-Channel-0088cc?style=flat-square&logo=telegram)](https://t.me/Droid_ch)
 ---
-[![Download](https://img.shields.io/badge/Download-File_APK-brightgreen?style=for-the-badge&logo=download)](https://sfl.gl/C2nRw)
+[![Download](https://img.shields.io/badge/Download-File_APK-brightgreen?style=for-the-badge&logo=download)](https://sfl.gl/dPWWXRV)
 ---
 
 <div align="center">
